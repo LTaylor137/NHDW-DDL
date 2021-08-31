@@ -1,0 +1,14 @@
+
+
+
+
+
+TABLE DWPATIENT
+CATEGORYID IS NOT A PRIMARY KEY.
+mistake was overlooked in data dictionary document.
+
+Removed Diagnosis. it's not useful for analysis
+
+
+
+
