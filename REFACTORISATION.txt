@@ -17,3 +17,6 @@ changed DOB datetime to DATE.
 DWDataPoint TABLE
 
 removed question text
+
+removed notes from dwintervention
+check this in datawarehouse design doc.
