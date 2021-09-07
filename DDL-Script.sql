@@ -27,6 +27,7 @@ GO
 CREATE TABLE ERROREVENT (
     ERRORID INTEGER IDENTITY(1,1),      -- IDENTITY(1,1) means this will automatically assign ID numbers when entries are added, and they will icrement by 1 each time.
     SOURCE_ID NVARCHAR(50),
+    SOURCE_DATABASE NVARCHAR(50),
     SOURCE_TABLE NVARCHAR(50),
     FILTERID INTEGER,
     [DATETIME] DATETIME,
