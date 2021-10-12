@@ -18,16 +18,13 @@
 
 -- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
 
+-- USE DDDM_TPS_1
+
+-- SELECT * FROM PATIENT
 
 --------------------------------------------------------------------------------
 -------------------------------- DataWarehouse ---------------------------------
 --------------------------------------------------------------------------------
-
--- Ahlams
--- shareddb.chxrsmr071sd.us-east-1.rds.amazonaws.com
--- admin
--- password = melbourne123
-
 
 -- Lachlans
 -- nhrmdwldt.cyw97dursdgw.us-east-1.rds.amazonaws.com
@@ -148,13 +145,28 @@ WHERE URNUMBER NOT IN (SELECT SOURCEID FROM DW_PATIENT)');
 -- EXEC ETL_DIM_PATIENT;
 
 --------------------------------------------------------------------------------
+--------------------------- Tasks to complete ----------------------------------
+--------------------------------------------------------------------------------
+
+-- Problem 1 Piecing together our query to exclude data already in the DW and EE.
+-- Problem 2 Get the required data from the source.
+-- Problem 3 store data (in a non permanent way i.e memory) to pass between various ETL procedures
+
+------- the below are stored procedures that you pass the data to use as a parameter
+
+-- Problem 4 apply any filters to the data.
+-- Problem 5 insert the good data
+-- Problem 6 insert any data which the filter rules say needs to be transformed.
+
+--------------------------------------------------------------------------------
 ------------------------------- Tims Solution ----------------------------------
 --------------------------------------------------------------------------------
 
+-- Problem 2 Get the required data from the source.
 
--- CREATE GET CONNECTION STRING FUNCTION.
 
--- :SETVAR SOURCEURL 10
+-- EXAMPLE CREATE GET CONNECTION STRING FUNCTION.
+USE NHDW_LDT_0214;
 
 DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
 GO
@@ -164,10 +176,10 @@ BEGIN
 END;
 GO
 
--- CREATE A COMMAND STRING.
-
+-- EXAMPLE CREATE A COMMAND STRING.
 BEGIN
     DECLARE @COMMAND1 NVARCHAR(MAX);
+
     SET @COMMAND1 = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
                     '''Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;'',' +
                     '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT'');'
@@ -175,84 +187,238 @@ BEGIN
     EXEC(@COMMAND1);
 END
 
--- CREATE A COMMAND STRING WITH WHERE LOGIC.
+-- EXAMPLE CREATE A COMMAND STRING WITH WHERE LOGIC.
+-- BEGIN
+--     DECLARE @COMMAND2 NVARCHAR(MAX);
+--     SET @COMMAND2 = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
+--                     '''Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;'',' +
+--                     '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (900000001, 900000002)'');'
+--     -- PRINT(@COMMAND2);          
+--     EXEC(@COMMAND2);
+-- END
 
-BEGIN
-    DECLARE @COMMAND2 NVARCHAR(MAX);
-    SET @COMMAND2 = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
-                    '''Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;'',' +
-                    '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (900000001, 900000002)'');'
-    -- PRINT(@COMMAND2);          
-    EXEC(@COMMAND2);
-END
-
-
-
--- CREATE A COMMAND STRING USING ROWNUMS.
--- SELECT * FROM LIST_OF_ROWNUMS;
-
+-- Problem 1 Piecing together our query to exclude data already in the DW and EE.
+-- EXAMPLE CREATE A COMMAND STRING USING ROWNUMS.
 BEGIN
 
--- GO AND GET THE CONNECTION STRING.
-    DECLARE @CONNSTRING NVARCHAR(MAX);
-    EXEC @CONNSTRING = GET_CONNECTION_STRING;
+    -- GO AND GET THE CONNECTION STRING.
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
 
--- SET UP A STRING OF XXX TO EXCLUDE FROM COMMAND
+    -- SET UP A STRING OF ID NUMBERS TO EXCLUDE FROM COMMAND (i.e. numbers already existing in EE or DW.)
     DECLARE @ROWNUMS NVARCHAR(MAX);
     SELECT @ROWNUMS = COALESCE(@ROWNUMS + ',', '') + ROWNUM
     FROM NHDW_LDT_0214.DBO.LIST_OF_ROWNUMS
     PRINT (@ROWNUMS);
 
---CREATE THE COMMAND TO SEND TO THE OTHER SERVER
+    --CREATE THE COMMAND TO SEND TO THE OTHER SERVER
     DECLARE @COMMAND NVARCHAR(MAX);
     SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
-                    '''' + @CONNSTRING + ''',' +
+                    '''' + @CONNECTIONSTRING + ''',' +
                     '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @ROWNUMS + ')'');'
-    -- PRINT(@COMMAND);          
+    PRINT(@COMMAND);
     EXEC(@COMMAND);
 
 END
 
+------------------ TEMPORARY TABLE METHOD ------------------
+
+-- THE SCOPE OF THE VARIABLE ENDS WHEN THE SESSION DOES.
 
 -- BEGIN
---     DECLARE @COMMAND3 NVARCHAR(MAX);
---     SET @COMMAND3 = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
---                     '''Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;'',' +
---                     '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @ROWNUMS + ')'');'
---     -- PRINT(@COMMAND3);          
---     EXEC(@COMMAND3);
+--     DROP TABLE IF EXISTS #TEMPTABLE;
+
+--     SELECT *
+--     INTO #TEMPTABLE
+--     FROM PATIENT;
+
+--     SELECT 1, *
+--     FROM #TEMPTABLE;
+-- END;
+
+
+
+
+
+
+-- Problem 3 store data (in a non permanent way i.e memory) 
+-- to pass between various ETL procedures
+
+------------------ STORED PROCEDURE METHOD ------------------
+
+USE NHDW_LDT_0214;
+
+DROP TYPE IF EXISTS TEMPTABLETYPE;
+DROP PROCEDURE IF EXISTS TABLE_PARAM_TEST;
+DROP PROCEDURE IF EXISTS GETTEMPDATA;
+DROP PROCEDURE IF EXISTS VAR_SELECT_TEST;
+
+
+--CREATE A DATA TYPE
+CREATE TYPE TEMPTABLETYPE AS TABLE
+(
+    TESTID INT,
+    TESTDATA NVARCHAR(100)
+)
+GO
+
+-- DECLARE A VARIABLE, TO STORE THE RESULTS OF A SELECT.
+-- THE SCOPE OF THE VARIABLE ENDS WHEN THE VARIABLE DOES.
+-- 28:52MINS
+
+--THIS PROCEDURE CREATES THE TEMPORARY TABLE
+CREATE PROCEDURE TABLE_PARAM_TEST
+AS
+BEGIN
+    SELECT 'ZZZ', *
+    FROM #TEMPTABLE;
+END;
+GO
+
+-- THIS PROCEDURE GETS THE DATA AND PLACES IT INTO XXX  VERSION 2
+CREATE PROCEDURE GETTEMPDATA
+AS
+BEGIN
+
+    DROP TABLE IF EXISTS #TEMPTABLE;
+
+    -- CREATE CONNECTION STRING
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    DECLARE @COMMAND NVARCHAR(MAX);
+    SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
+                    '''' + @CONNECTIONSTRING + ''',' +
+                    '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT'');'
+
+    SELECT * INTO #TEMPTABLE
+
+    EXEC(@COMMAND);
+END;
+
+GO
+
+CREATE PROCEDURE VAR_SELECT_TEST
+AS
+BEGIN
+
+    -- CREATE CONNECTION STRING
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    EXEC GETTEMPDATA;
+    EXEC TABLE_PARAM_TEST;
+
+END;
+
+-- EXECUTE AFTER INITIALISING PROCEDURES
+DROP TABLE IF EXISTS #TEMPTABLE;
+GO
+EXEC VAR_SELECT_TEST;
+GO;
+
+----+++++++++++++++++++++++++++++ THIS WAS WORKING.
+
+-- -- THIS PROCEDURE GETS THE DATA AND PLACES IT INTO XXX   VERSION 1
+-- CREATE PROCEDURE VAR_SELECT_TEST
+-- AS
+-- BEGIN
+
+--     DECLARE @TEMPTABLE TEMPTABLETYPE;
+--     -- THINK OF THIS AS A TEMPLATE.
+--     SELECT *
+--     FROM @TEMPTABLE;
+--     -- CHECK CONTENTS OF TABLE BEFORE.
+
+--     -- CREATE CONNECTION STRING
+--     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+--     EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+--     -- SET UP A STRING OF ID NUMBERS TO EXCLUDE FROM COMMAND (i.e. numbers already existing in EE or DW.)
+--     -- DECLARE @ROWNUMS NVARCHAR(MAX);
+--     -- SELECT @ROWNUMS = COALESCE(@ROWNUMS + ',', '') + ROWNUM
+--     -- FROM NHDW_LDT_0214.DBO.LIST_OF_ROWNUMS
+--     -- PRINT (@ROWNUMS);
+
+--     DECLARE @COMMAND NVARCHAR(MAX);
+--     SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
+--                     '''' + @CONNECTIONSTRING + ''',' +
+--                     -- '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @ROWNUMS + ')'');'
+--                     -- PULLS BASIC DATA 
+--                     '''SELECT URNumber, FirstName FROM DDDM_TPS_1.dbo.PATIENT'');'
+
+--     -- PRINT(@COMMAND);
+--     INSERT INTO @TEMPTABLE
+--     EXEC(@COMMAND);
+
+--     EXEC TABLE_PARAM_TEST @IN_TABLE = @TEMPTABLE;
+--     -- E.G. ETL_NHRM_PATIENT_FILTER_1
+
+--     SELECT *
+--     FROM @TEMPTABLE;
+-- -- CHECK CONTENTS OF TABLE AFTER.
+
+-- END;
+
+-- -- EXECUTE AFTER INITIALISING PROCEDURES
+-- EXEC VAR_SELECT_TEST
+
+----+++++++++++++++++++++++++++++
+
+-- SELECT *
+-- FROM @TEMPTABLE;
+
+
+
+-- BEGIN
+
+--     DECLARE @PATIENTTABLE DEMOTABLETYPE;
+
+--     INSERT INTO @PATIENTTABLE
+--     SELECT URNUMBER, EMAIL, TITLE
+--     FROM PATIENT;
+
+--     SELECT 4, *
+--     FROM @PATIENTTABLE;
+
 -- END
 
 
+--------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+-- get list of all patients not required -- patients already in dw -- patients in EE --
+-----------------------------------------------------------------------------------------
 
+-- SEE 42:50 MINS
 
-
+SELECT *
+FROM DW_PATIENT
 
 DROP PROCEDURE IF EXISTS DIM_PATIENT_TRANSFER_GOOD
 AS
 
 BEGIN
-    -- get list of all patients not required -- patients already in dw -- patients in EE
+
 
     DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
     SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
     FROM NHDW_LDT_0214.DBO.DW_PATIENT
-    WHERE DWSOURCEBD = 'NHRM';
-    PRINT @ALREADY_IN_DIM;
+    WHERE DWSOURCEDB = 'NHRM';
+    --PRINT @ALREADY_IN_DIM;
 
     DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
     SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + URNUMBER
     FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    WHERE DWSOURCEBD = 'NHRM';
+    WHERE DWSOURCEDB = 'NHRM';
     --PRINT @IN_ERROR_EVENT;
 
     DECLARE @TO_EXCLUDE NVARCHAR(MAX)
     SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
     PRINT @TO_EXCLUDE;
 
-    -- write the coide to get the required data - excludes those identified above.
-    DECLARE @CONNSTRING NVARCHAR(MAX);
-    EXECUTE @CONNSTRING = GET_CONNECTION_STRING;
+    -- write the code to get the required data - excludes those identified above.
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
 
     DECLARE @SELECTQUERY NVARCHAR(MAX);
     SET @SELECTQUERY = '''SELECT URNUMBER, GENDER, YEAR(DOB) AS YOB,' +
@@ -268,14 +434,14 @@ BEGIN
                     ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
 
 
-
+    -- END
 
     DECLARE @INSERTQUERY NVARCHAR(MAX);
     SET @INSERTQUERY = 'INSERT INTO DW_PATIENT(DWPATIENTID, SOURCEDB, SOURCEID, GENDER, YOB)' +
                     'SELECT 1, ''NHRM'', SOURCE.URNUMBER, SOURCE.GENDER, SOURCE.YOB';
 
     DECLARE @COMMAND NVARCHAR(MAX);
-    SET @COMMAND = @INSERTQUERY + ' FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNSTRING + ''',' + @SELECTQUERY + ') SOURCE;'
+    SET @COMMAND = @INSERTQUERY + ' FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ') SOURCE;'
 
     --PRINT(@COMMAND);
     EXECUTE(@COMMAND);
