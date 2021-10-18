@@ -17,7 +17,8 @@
 
 -- USE DDDM_TPS_1
 
--- SELECT * FROM PATIENT
+SELECT *
+FROM sys.objects
 
 --------------------------------------------------------------------------------
 -------------------------------- DataWarehouse ---------------------------------
@@ -199,12 +200,12 @@ VALUES
 INSERT INTO DW_PATIENT
 VALUES
     (
-        900000015, 900000015, 'NHRM', 'TABLE', 'Male', GETDATE(), 'Suburb', 3000, 'Australia', 'English', 'No', +
-        'Yes', 1, 'IPC', GETDATE(), 'Bad'
+        900000015, 900000015, 'NHRM', 'TABLE', 'Male', GETDATE(), 'Suburb', 3000, 'Australia', '0', +
+        '1', 1, 'IPC', GETDATE(), 'Bad'
 ),
     (
-        900000020, 900000020, 'NHRM', 'TABLE', 'Female', GETDATE(), 'Suburb', 3000, 'Australia', 'English', 'No', +
-        'Yes', 1, 'IPC', GETDATE(), 'Bad'
+        900000020, 900000020, 'NHRM', 'TABLE', 'Female', GETDATE(), 'Suburb', 3000, 'Australia', '0', +
+        '1', 1, 'IPC', GETDATE(), 'Bad'
 )
 
 SELECT *
@@ -228,6 +229,20 @@ go;
 
 -- get list of all patients not required -- patients already in dw -- patients in EE 
 -- e.g. "(900000015,900000020,900000005,900000010)"
+
+
+-- TODO this doesnt work if DW_PATIENT contains no ID's
+
+
+SELECT *
+FROM DW_PATIENT
+
+SELECT *
+FROM ERROR_EVENT
+-- test data
+
+
+
 USE NHDW_LDT_0214
 
 DROP PROCEDURE IF EXISTS GET_IDS_TO_EXCLUDE
@@ -241,13 +256,24 @@ BEGIN
     SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
     FROM NHDW_LDT_0214.DBO.DW_PATIENT
     -- WHERE DWSOURCEDB = 'NHDW_LDT_0214';
-    --PRINT @ALREADY_IN_DIM;
+    PRINT @ALREADY_IN_DIM;
 
     DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
     SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
     FROM NHDW_LDT_0214.DBO.ERROR_EVENT
     -- WHERE DWSOURCEDB = 'NHDW_LDT_0214';
-    -- PRINT @IN_ERROR_EVENT;
+    PRINT @IN_ERROR_EVENT;
+
+    -- resolves issue if @ALREADY_IN_DIM contained no values, then @TO_EXCLUDE would not SET at all.
+    IF (@ALREADY_IN_DIM IS NULL)
+    BEGIN
+        SET @ALREADY_IN_DIM = '0'
+    END
+
+    IF (@IN_ERROR_EVENT IS NULL)
+    BEGIN
+        SET @IN_ERROR_EVENT = '0'
+    END
 
     DECLARE @TO_EXCLUDE NVARCHAR(MAX)
     SET @TO_EXCLUDE = '(' + @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT + ')';
@@ -301,8 +327,8 @@ CREATE PROCEDURE GETTEMPDATA
 AS
 BEGIN
 
-    DROP TABLE IF EXISTS TEMPTABLE;
-    CREATE TABLE TEMPTABLE
+    DROP TABLE IF EXISTS TEMPTABLE1;
+    CREATE TABLE TEMPTABLE1
     (
         TESTID INT,
         TESTDATA NVARCHAR(100)
@@ -320,14 +346,14 @@ BEGIN
     PRINT 'BEFORE'
 
     SELECT *
-    FROM TEMPTABLE
+    FROM TEMPTABLE1
 
     EXEC(@COMMAND);
 
     PRINT 'AFTER'
 
     SELECT *
-    FROM TEMPTABLE
+    FROM TEMPTABLE1
 
 END;
 
@@ -364,13 +390,11 @@ BEGIN
     SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
     FROM NHDW_LDT_0214.DBO.DW_PATIENT
     -- WHERE DWSOURCEDB = 'NHRM';
-    --PRINT @ALREADY_IN_DIM;
 
     DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
     SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
     FROM NHDW_LDT_0214.DBO.ERROR_EVENT
     -- WHERE DWSOURCEDB = 'NHRM';
-    -- PRINT @IN_ERROR_EVENT;
 
     DECLARE @TO_EXCLUDE NVARCHAR(MAX)
     SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
@@ -384,22 +408,19 @@ BEGIN
     CREATE TABLE TEMPTABLE
     (
         URNUMBER INT,
-        Gender NVARCHAR(MAX),
+        GENDER NVARCHAR(10),
         DOB INT,
-        Suburb NVARCHAR(MAX),
-        postcode NVARCHAR(MAX),
-        CountryOfBirth NVARCHAR(MAX),
-        -- PreferredLanguage NVARCHAR(MAX),
-        LIVESALONE NVARCHAR(MAX),
-        Active NVARCHAR(MAX),
+        SUBURB NVARCHAR(MAX),
+        POSTCODE NVARCHAR(4),
+        COUNTRYOFBIRTH NVARCHAR(MAX),
+        LIVESALONE NVARCHAR(1),
+        ACTIVE NVARCHAR(1),
         [DIAGNOSIS] NVARCHAR(MAX),
         [CATEGORY] NVARCHAR(MAX),
         [PROCEDURE] NVARCHAR(MAX)
     )
 
     DECLARE @INSERTQUERY NVARCHAR(MAX);
-    -- SET @INSERTQUERY = 'INSERT INTO DW_PATIENT(DWPATIENTID, URNUMBER, DWSOURCEDB, DWSOURCETABLE, GENDER, DOB, SUBURB, POSTCODE, COUNTRYOFBIRTH,' +
-    --                     'PREFFEREDLANGUAGE, LIVESALONE, ACTIVE, CATEGORYID, CATEGORYNAME, PROCEDUREDATE, DIAGNOSIS)'
     SET @INSERTQUERY = 'INSERT INTO TEMPTABLE SELECT URNUMBER,Gender,DOB,Suburb,postcode,CountryOfBirth,LIVESALONE,Active,DIAGNOSIS,CATEGORY,[PROCEDURE]'
 
     -- write the code to get the required data - excludes those identified above.
@@ -415,35 +436,207 @@ BEGIN
 
                     '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
                     ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
-    -- SET @SELECTQUERY = '''SELECT URNUMBER,Gender,DOB,Suburb,CountryOfBirth,PreferredLanguage,LIVESALONE,Active FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')'''
 
     DECLARE @COMMAND NVARCHAR(MAX);
     SET @COMMAND = @INSERTQUERY + ' FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
 
-    -- DECLARE @testQUERY NVARCHAR(MAX);
-    -- SET @testQUERY =  'INSERT INTO TEMPTABLE SELECT * FROM OPENROWSET(''SQLNCLI'', ' + 
-    --                     '''' + @CONNECTIONSTRING + ''',' +
-    --                     '''SELECT URNumber, FirstName FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')'');'
-
-    -- PRINT('---- this is the command ----  ' + @testQUERY);
-
     SELECT *
     FROM TEMPTABLE
+    -- view table before 
 
     PRINT('---- this is the command ----  ' + @COMMAND);
     EXECUTE(@COMMAND);
 
     SELECT *
-    FROM TEMPTABLE
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE
+-- view table after 
 
 END;
 
+EXEC TRANSFER_DATA_TO_TEMP_STORAGE;
 
-exec TRANSFER_DATA_TO_TEMP_STORAGE;
+SELECT *
+FROM DW_PATIENT
+
+SELECT *
+FROM TEMPTABLE
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+----------------------------------------------------------------------------------------
+----------------------------------- Apply Filters --------------------------------------
+----------------------------------------------------------------------------------------
+-- Problem 4 apply any filters to the data.
 
 
 
--- Using a variable datatype method.
+-- Gender is not Male or Female
+DROP PROCEDURE IF EXISTS FILTER_1_GENDER
+GO
+CREATE PROCEDURE FILTER_1_GENDER
+AS
+BEGIN
+
+    INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE,
+        SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT TT.URNUMBER, 'NHRM', 'TABLE', '1', SYSDATETIME(), 'MODIFY'
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE TT
+    WHERE TT.GENDER NOT IN ('Male', 'Female');
+
+    DELETE 
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE
+    WHERE GENDER NOT IN ('Male', 'Female');
+
+END
+
+-- Title is not Mrs., Ms., Mr.
+
+DROP PROCEDURE IF EXISTS FILTER_2_TITLE
+GO
+CREATE PROCEDURE FILTER_2_TITLE
+AS
+BEGIN
+
+    INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE,
+        SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT TT.URNUMBER, 'NHRM', 'TABLE', '2', SYSDATETIME(), 'MODIFY'
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE TT
+    WHERE TT.GENDER NOT IN ('Mr.', 'Ms.', 'Mrs.');
+
+    DELETE 
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE 
+    WHERE GENDER NOT IN ('Mr.', 'Ms.', 'Mrs.');
+
+END
+
+
+-- Postcode is not 4 numbers long.
+DROP PROCEDURE IF EXISTS FILTER_3_POSTCODE
+GO
+CREATE PROCEDURE FILTER_3_POSTCODE
+AS
+BEGIN
+
+    INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE,
+        SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT TT.URNUMBER, 'NHRM', 'TABLE', '1', SYSDATETIME(), 'SKIP'
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE TT
+    WHERE LEN(TT.POSTCODE) != 3;
+
+    DELETE 
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE
+    WHERE LEN(POSTCODE) != 4;
+
+END
+
+-- MobileNumber is not 10 numbers long.
+SELECT * FROM DW0214.DBO.ERROREVENT;
+GO
+
+INSERT INTO DW0214.DBO.ERROREVENT (ERRORID, SOURCE_ID, SOURCE_TABLE, FILTERID, DATETIME, ACTION)
+
+SELECT NEXT VALUE FOR NEWERRORID_SEQ, CUSTID, 'CUSTBRIS', 5, GETDATE(), 'MODIFY'
+FROM TPS.DBO.CUSTBRIS
+WHERE Phone LIKE '% %' 
+OR Phone LIKE '%-%';
+GO
+
+
+-- MobileNumber is not 10 numbers long.
+
+-- Category is null 
+
+----------------------------------------------------------------------------------------
+------------------------------- Transfer into DW PATIENT -------------------------------
+----------------------------------------------------------------------------------------
+-- Problem 5 insert the good data
+
+
+
+go
+USE NHDW_LDT_0214;
+
+DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_DW_PATIENT_TABLE
+GO
+CREATE PROCEDURE TRANSFER_DATA_TO_DW_PATIENT_TABLE
+AS
+BEGIN
+
+    INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
+        (
+        DWPATIENTID,
+        URNUMBER,
+        DWSOURCEDB,
+        DWSOURCETABLE,
+        GENDER,
+        DOB,
+        SUBURB,
+        POSTCODE,
+        COUNTRYOFBIRTH,
+        LIVESALONE,
+        ACTIVE,
+        CATEGORYID,
+        CATEGORYNAME,
+        PROCEDUREDATE,
+        DIAGNOSIS)
+    SELECT
+        TT.URNUMBER,
+        TT.URNUMBER,
+        'NRHM',
+        'Patient',
+        TT.GENDER,
+        GETDATE(),
+        TT.SUBURB,
+        TT.POSTCODE,
+        TT.COUNTRYOFBIRTH,
+        TT.LIVESALONE,
+        TT.ACTIVE,
+        '1',
+        'CATEGORY',
+        GETDATE(),
+        'DIAGNOSIS'
+    FROM NHDW_LDT_0214.DBO.TEMPTABLE TT
+
+END
+
+EXEC TRANSFER_DATA_TO_DW_PATIENT_TABLE
+
+
+
+
+
+-- -------------------------Using a variable datatype method.---------------------------------
+
+
+
+-- CREATE A DATA TYPE
+DROP TYPE IF EXISTS TESTINGTABLETYPE;
+    GO
+CREATE TYPE TESTINGTABLETYPE AS TABLE
+    (
+    URNUMBER INT,
+    GENDER NVARCHAR(10),
+    DOB INT,
+    SUBURB NVARCHAR(MAX),
+    POSTCODE NVARCHAR(4),
+    COUNTRYOFBIRTH NVARCHAR(MAX),
+    -- PreferredLanguage NVARCHAR(MAX),
+    LIVESALONE NVARCHAR(1),
+    ACTIVE NVARCHAR(1),
+    [DIAGNOSIS] NVARCHAR(MAX),
+    [CATEGORY] NVARCHAR(MAX),
+    [PROCEDURE] NVARCHAR(MAX)
+    );
+
+    GO
+
+DECLARE @PATIENTTABLE TESTINGTABLETYPE;
+
+
 
 go
 
@@ -477,39 +670,40 @@ BEGIN
     -- END;
 
 
+    DROP TABLE IF EXISTS TEMPTABLE;
+go
+DECLARE @TEMPTABLEVAR TEMPTABLETYPE;
+-- THINK OF THIS AS A TEMPLATE.
+SELECT *
+FROM @TEMPTABLEVAR;
+-- CHECK CONTENTS OF TABLE BEFORE.
 
-    DECLARE @TEMPTABLE TEMPTABLETYPE;
-    -- THINK OF THIS AS A TEMPLATE.
-    SELECT *
-    FROM @TEMPTABLE;
-    -- CHECK CONTENTS OF TABLE BEFORE.
+-- CREATE CONNECTION STRING
+DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
 
-    -- CREATE CONNECTION STRING
-    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
-    EXEC @CONNECTIONSTRING = GET_CONNECTION_STRING;
+-- SET UP A STRING OF ID NUMBERS TO EXCLUDE FROM COMMAND (i.e. numbers already existing in EE or DW.)
+-- DECLARE @ROWNUMS NVARCHAR(MAX);
+-- SELECT @ROWNUMS = COALESCE(@ROWNUMS + ',', '') + ROWNUM
+-- FROM NHDW_LDT_0214.DBO.LIST_OF_ROWNUMS
+-- PRINT (@ROWNUMS);
 
-    -- SET UP A STRING OF ID NUMBERS TO EXCLUDE FROM COMMAND (i.e. numbers already existing in EE or DW.)
-    -- DECLARE @ROWNUMS NVARCHAR(MAX);
-    -- SELECT @ROWNUMS = COALESCE(@ROWNUMS + ',', '') + ROWNUM
-    -- FROM NHDW_LDT_0214.DBO.LIST_OF_ROWNUMS
-    -- PRINT (@ROWNUMS);
-
-    DECLARE @COMMAND NVARCHAR(MAX);
-    SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
+DECLARE @COMMAND NVARCHAR(MAX);
+SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' +
                     '''' + @CONNECTIONSTRING + ''',' +
                     -- '''SELECT * FROM DDDM_TPS_1.dbo.PATIENT WHERE URNUMBER NOT IN (' + @ROWNUMS + ')'');'
                     -- PULLS BASIC DATA 
                     '''SELECT URNumber, FirstName FROM DDDM_TPS_1.dbo.PATIENT'');'
 
-    -- PRINT(@COMMAND);
-    INSERT INTO @TEMPTABLE
-    EXEC(@COMMAND);
+-- PRINT(@COMMAND);
+INSERT INTO @TEMPTABLEVAR
+EXEC(@COMMAND);
 
-    EXEC TABLE_PARAM_TEST @IN_TABLE = @TEMPTABLE;
-    -- E.G. ETL_NHRM_PATIENT_FILTER_1
+EXEC TABLE_PARAM_TEST @IN_TABLE = @TEMPTABLEVAR;
+-- E.G. ETL_NHRM_PATIENT_FILTER_1
 
-    SELECT *
-    FROM @TEMPTABLE;
+SELECT *
+FROM @TEMPTABLEVAR;
 -- CHECK CONTENTS OF TABLE AFTER.
 
 END;
@@ -520,7 +714,7 @@ END;
 ----+++++++++++++++++++++++++++++
 
 -- SELECT *
--- FROM @TEMPTABLE;
+-- FROM @TEMPTABLEVAR;
 
 
 

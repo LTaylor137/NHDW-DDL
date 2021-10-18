@@ -20,3 +20,19 @@ removed question text
 
 removed notes from dwintervention
 check this in datawarehouse design doc.
+
+
+amended DW_PATIENT TABLE to reflect data in source.
+
+    PREFFEREDLANGUAGE NVARCHAR(50) NOT NULL,
+    LIVESALONE NVARCHAR(3) NOT NULL
+        CHECK(LIVESALONE IN ('Yes','No')),
+    ACTIVE NVARCHAR(3) NOT NULL
+        CHECK(ACTIVE IN ('Yes','No')),
+
+     >>>>> TO >>>>>
+
+   LIVESALONE NVARCHAR(1) NOT NULL
+        CHECK(LIVESALONE IN ('1','0')),
+    ACTIVE NVARCHAR(1) NOT NULL
+        CHECK(ACTIVE IN ('1','0')),
