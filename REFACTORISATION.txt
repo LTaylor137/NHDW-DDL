@@ -36,3 +36,6 @@ amended DW_PATIENT TABLE to reflect data in source.
         CHECK(LIVESALONE IN ('1','0')),
     ACTIVE NVARCHAR(1) NOT NULL
         CHECK(ACTIVE IN ('1','0')),
+
+Removed Category ID from patient table, redundant as category name exists.
+changed DOB from DATE to INT
