@@ -1,0 +1,195 @@
+--------------------------------------------------------------------------------
+----------------------------- General table lookups ----------------------------
+--------------------------------------------------------------------------------
+
+-- SELECT NAME FROM SYS.DATABASES;
+
+-- SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+-- SELECT * FROM master.sys.sql_logins;
+
+-- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
+
+-- USE DDDM_TPS_1
+
+-- SELECT * FROM sys.objects
+
+
+SELECT * FROM datapoint
+
+--------------------------------------------------------------------------------
+----------------------------- General table lookups ----------------------------
+-------------------------------------------------------------------------------
+
+
+-- pull data from DDDM_TPS_1.DBO.PATIENT and insert it into a temptable. 
+DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_TEMP_MEAS_STORAGE
+GO
+CREATE PROCEDURE TRANSFER_DATA_TO_TEMP_MEAS_STORAGE
+AS
+BEGIN
+
+    -- get a string of id's already in EE and DW tables.
+    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
+    FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+    -- WHERE DWSOURCEDB = 'NHRM';
+
+    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    -- WHERE DWSOURCEDB = 'NHRM';
+
+    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    PRINT @TO_EXCLUDE;
+
+    -- get connection string
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+    -- (
+    --     DWMEASUREMENTID INTEGER NOT NULL,
+    --     MEASUREMENTID INTEGER NOT NULL,
+    --     DATAPOINTNUMBER INTEGER NOT NULL,
+    --     DWSOURCEBD NVARCHAR(50) NOT NULL,
+    --     DWSOURCETABLE NVARCHAR(50) NOT NULL,
+    --     MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+    --     [NAME] NVARCHAR(50) NOT NULL,
+    --     UPPERLIMIT INTEGER NOT NULL,
+    --     LOWERLIMIT INTEGER NOT NULL,
+    --     QUESTION NVARCHAR(255) NOT NULL,
+    --     ANSWERNUMBER INTEGER NULL,
+    --     PRIMARY KEY (DWMEASUREMENTID)
+    -- );
+
+
+-- CREATE TABLE DW_MEASUREMENT
+--     pm DWMEASUREMENTID INTEGER NOT NULL, 
+--     pm MEASUREMENTID INTEGER NOT NULL,
+--     dp DATAPOINTNUMBER INTEGER NOT NULL,
+--     x DWSOURCEBD NVARCHAR(50) NOT NULL,
+--     x DWSOURCETABLE NVARCHAR(50) NOT NULL,
+--     me MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+--     dp [NAME] NVARCHAR(50) NOT NULL,
+--     dp UPPERLIMIT INTEGER NOT NULL,
+--     dp LOWERLIMIT INTEGER NOT NULL,
+--     QUESTION NVARCHAR(255) NOT NULL,
+--     ANSWERNUMBER INTEGER NULL,
+
+DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
+GO
+CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
+     MEASUREMENTID INTEGER NOT NULL,
+     DATAPOINTNUMBER INTEGER NOT NULL,
+     MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+     [NAME] NVARCHAR(50) NOT NULL,
+     UPPERLIMIT INTEGER NOT NULL,
+     LOWERLIMIT INTEGER NOT NULL
+);
+
+
+SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+SELECT * FROM PatientMeasurement
+
+
+SELECT 
+PM.MEASUREMENTID, 
+DP.DATAPOINTNUMBER,  
+ME.MEASUREMENTNAME, 
+    DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT
+FROM DataPoint DP
+INNER JOIN PatientMeasurement PM
+ON DP.MeasurementID = PM.MeasurementID
+INNER JOIN Measurement ME
+ON PM.Frequency = ME.Frequency
+
+
+-- INSERT INTO PatientMeasurement
+--     (MeasurementID,CategoryID,URNumber,Frequency,FrequencySetDate)
+-- VALUES(1, 1, '123456789', 28, GETDATE()),
+--     (2, 1, '123456789', 1, GETDATE()),
+--     (3, 1, '123456789', 1, GETDATE()),
+--     (4, 1, '123456789', 1, GETDATE()),
+--     (5, 1, '123456789', 7, GETDATE()),
+--     (1, 1, '987654321', 28, GETDATE()),
+--     (2, 1, '987654321', 1, GETDATE()),
+--     (3, 1, '987654321', 1, GETDATE()),
+--     (4, 1, '987654321', 1, GETDATE()),
+--     (5, 1, '987654321', 7, GETDATE());
+
+--     INSERT INTO Measurement
+--     (MeasurementName, Frequency)
+-- VALUES('ECOG Status', 28),
+--     ('Breathlessness', 1),
+--     ('Level of Pain', 1),
+--     ('Fluid Drain', 1),
+--     ('Quality of Life', 7);
+
+-- INSERT INTO DataPoint
+--     (MeasurementID,DataPointNumber,UpperLimit,LowerLimit,[Name])
+-- VALUES(1, 1, 4, 0, 'ECOG Status'),
+--     (2, 1, 5, 1, 'Breathlessness'),
+--     (3, 1, 5, 1, 'Level of Pain'),
+--     (4, 1, 600, 0, 'Fluid Drain'),
+--     (5, 1, 5, 1, 'Mobility'),
+--     (5, 2, 5, 1, 'Self-Care'),
+--     (5, 3, 5, 1, 'Usual-Activies'),
+--     (5, 4, 5, 1, 'Pain/Discomfort'),
+--     (5, 5, 5, 1, 'Anxiety/Depression'),
+--     (5, 6, 100, 0, 'QoL Vas Health Slider');
+
+
+    DECLARE @INSERTQUERY NVARCHAR(MAX);
+    SET @INSERTQUERY = 'INSERT INTO TEMPMEASUREMENTTABLE SELECT MEASUREMENTID, DATAPOINTNUMBER, MEASUREMENTNAME, [NAME], UPPERLIMIT, LOWERLIMIT'
+
+    -- write the code to get the required data - excludes those identified above.
+    DECLARE @SELECTQUERY NVARCHAR(MAX);
+    SET @SELECTQUERY = '''SELECT URNUMBER, GENDER, YEAR(DOB) AS DOB,' +
+                    'SUBURB, POSTCODE, COUNTRYOFBIRTH, LIVESALONE, ACTIVE, ' +
+                    '(SELECT TOP 1 DIAGNOSIS FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [DIAGNOSIS],' +
+
+                    '(SELECT TOP 1 CATEGORYNAME FROM DDDM_TPS_1.DBO.PATIENTCATEGORY PC' +
+                    ' INNER JOIN DDDM_TPS_1.DBO.TEMPLATECATEGORY TC' +
+                    ' ON PC.CATEGORYID = TC.CATEGORYID' +
+                    ' WHERE PC.URNUMBER = P.URNUMBER) AS [CATEGORY], ' +
+
+                    '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
+                    ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
+
+    DECLARE @COMMAND NVARCHAR(MAX);
+    SET @COMMAND = @INSERTQUERY + ' FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
+
+    SELECT *
+    FROM TEMPMEASUREMENTTABLE
+    -- view table before 
+
+    PRINT('---- this is the command ----  ' + @COMMAND);
+    EXECUTE(@COMMAND);
+
+    SELECT *
+    FROM NHDW_LDT_0214.DBO.TEMPMEASUREMENTTABLE
+-- view table after 
+
+END;
+
+EXEC TRANSFER_DATA_TO_TEMP_MEAS_STORAGE;
+
+SELECT *
+FROM DW_PATIENT
+
+SELECT *
+FROM TEMPTABLE
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+
+SELECT *
+FROM
+    OPENROWSET('SQLNCLI', 'Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
+'SELECT * FROM DDDM_TPS_1.dbo.PATIENT');
+----------------------------------------------------------------------------------------
+----------------------------------- Apply Filters --------------------------------------
+----------------------------------------------------------------------------------------
+

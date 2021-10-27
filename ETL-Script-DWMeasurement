@@ -1,4 +1,159 @@
+--------------------------------------------------------------------------------
+----------------------------- General table lookups ----------------------------
+--------------------------------------------------------------------------------
 
+-- SELECT NAME FROM SYS.DATABASES;
+
+-- SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+-- SELECT * FROM master.sys.sql_logins;
+
+-- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
+
+-- USE DDDM_TPS_1
+
+-- SELECT * FROM sys.objects
+
+
+SELECT *
+FROM datapoint
+
+
+-- USE NHDW_LDT_0214;
+
+
+--------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+
+-- queries to use in Tims Source DB
+-- USE DDDM_TPS_1
+
+-- SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+-- SELECT * FROM PatientMeasurement
+
+
+-- SELECT
+--     PM.MEASUREMENTID,
+--     DP.DATAPOINTNUMBER,
+--     ME.MEASUREMENTNAME,
+--     DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT
+-- FROM DataPoint DP
+--     INNER JOIN PatientMeasurement PM
+--     ON DP.MeasurementID = PM.MeasurementID
+--     INNER JOIN Measurement ME
+--     ON PM.Frequency = ME.Frequency
+
+USE DDDM_TPS_1
+SELECT * FROM measurementrecord
+SELECT * FROM patientmeasurement
+SELECT * FROM datapointrecord
+SELECT * FROM measurement
+SELECT * FROM datapoint
+
+SELECT
+    MR.MeasurementRecordID,
+    MR.DateTimeRecorded,
+    MR.URNumber,
+    MR.MeasurementID,
+    MR.CategoryID,
+    DPR.DATAPOINTNUMBER,
+    DPR.VALUE,
+    DP.MEASUREMENTNAME,
+    DP.[NAME], 
+    DP.UPPERLIMIT, 
+    DP.LOWERLIMIT
+FROM measurementrecord MR
+    INNER JOIN datapointrecord DPR
+    ON MR.MeasurementRecordID = DPR.MeasurementRecordID
+    INNER JOIN datapoint DP
+    ON DP.MeasurementID = MR.MeasurementID
+
+
+SELECT *
+FROM measurementrecord
+MeasurementRecordID
+DateTimeRecorded
+URNumber
+MeasurementID
+CategoryID
+
+
+GO
+
+
+
+
+
+-- CREATE GET CONNECTION STRING FUNCTION.
+USE NHDW_LDT_0214;
+
+DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+GO
+CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
+BEGIN
+    RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
+END;
+GO
+
+
+SELECT *
+FROM
+    OPENROWSET('SQLNCLI', 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
+'SELECT * FROM DDDM_TPS_1.dbo.Datapoint');
+
+
+
+-- this worked to select required data
+BEGIN
+
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+
+    DECLARE @SELECTQUERY0 NVARCHAR(MAX);
+
+    SET @SELECTQUERY0 = '''SELECT PM.MEASUREMENTID, DP.DATAPOINTNUMBER, ME.MEASUREMENTNAME, DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT' + 
+                    ' FROM DDDM_TPS_1.dbo.DataPoint DP ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.PatientMeasurement PM ' + 
+                    'ON DP.MeasurementID = PM.MeasurementID ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.Measurement ME ' + 
+                    'ON PM.Frequency = ME.Frequency''';
+
+    DECLARE @COMMAND NVARCHAR(MAX);
+    SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY0 + ');'
+
+    PRINT('---- this is the command ----  ' + @COMMAND);
+    EXECUTE(@COMMAND);
+
+END
+
+
+
+--------------------------------------------------------------------------------
+-------------------------------- Temp table type- ------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- create temp table type before procedure
+DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
+GO
+CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
+    MEASUREMENTID NVARCHAR(50) NOT NULL,
+    DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
+    MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+    [NAME] NVARCHAR(50) NOT NULL,
+    UPPERLIMIT NVARCHAR(50) NOT NULL,
+    LOWERLIMIT NVARCHAR(50) NOT NULL
+);
+
+
+
+--------------------------------------------------------------------------------
+------------------------------ Transfer Procedure ------------------------------
+--------------------------------------------------------------------------------
 
 
 
@@ -9,24 +164,235 @@ CREATE PROCEDURE TRANSFER_DATA_TO_TEMP_MEAS_STORAGE
 AS
 BEGIN
 
-    -- get a string of id's already in EE and DW tables.
-    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
-    FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
-    -- WHERE DWSOURCEDB = 'NHRM';
+    -- -- get a string of id's already in EE and DW tables.
+    -- DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    -- SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
+    -- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+    -- -- WHERE DWSOURCEDB = 'NHRM';
 
-    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
-    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    -- WHERE DWSOURCEDB = 'NHRM';
+    -- DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    -- SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
+    -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    -- -- WHERE DWSOURCEDB = 'NHRM';
 
-    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
-    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
-    PRINT @TO_EXCLUDE;
+    -- DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    -- SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    -- PRINT @TO_EXCLUDE;
 
     -- get connection string
     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
     EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    DECLARE @INSERTQUERY NVARCHAR(MAX);
+    SET @INSERTQUERY = 'INSERT INTO TEMPMEASUREMENTTABLE SELECT MEASUREMENTID, DATAPOINTNUMBER, MEASUREMENTNAME, [NAME], UPPERLIMIT, LOWERLIMIT'
+
+    -- write the code to get the required data - excludes those identified above.
+    DECLARE @SELECTQUERY_MS NVARCHAR(MAX);
+    SET @SELECTQUERY_MS = '''SELECT PM.MEASUREMENTID, DP.DATAPOINTNUMBER, ME.MEASUREMENTNAME, DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT' + 
+                        ' FROM DDDM_TPS_1.dbo.DataPoint DP ' + 
+                        'INNER JOIN DDDM_TPS_1.dbo.PatientMeasurement PM ' + 
+                        'ON DP.MeasurementID = PM.MeasurementID ' + 
+                        'INNER JOIN DDDM_TPS_1.dbo.Measurement ME ' + 
+                        'ON PM.Frequency = ME.Frequency''';
+
+    -- ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
+
+
+    DECLARE @COMMAND_MS NVARCHAR(MAX);
+    SET @COMMAND_MS = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY_MS + ');'
+
+    PRINT('---- this is the command ----  ' + @COMMAND_MS);
+
+    DECLARE @TEMPMEASUREMENTTABLE AS TEMP_MEASUREMENT_TABLE_TYPE;
+
+    SELECT 'TT M 0', *
+    FROM @TEMPMEASUREMENTTABLE;
+
+    INSERT INTO @TEMPMEASUREMENTTABLE
+    EXECUTE(@COMMAND_MS);
+
+    SELECT 'TT M 1', *
+    FROM @TEMPMEASUREMENTTABLE;
+
+-- EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
+
+-- EXEC TRANSFER_DATA_TO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
+
+END;
+
+EXEC TRANSFER_DATA_TO_TEMP_MEAS_STORAGE;
+
+
+
+
+SELECT *
+FROM DW_PATIENT
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+
+SELECT *
+FROM
+    OPENROWSET('SQLNCLI', 'Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
+'SELECT * FROM DDDM_TPS_1.dbo.PATIENT');
+----------------------------------------------------------------------------------------
+----------------------------------- Apply Filters --------------------------------------
+----------------------------------------------------------------------------------------
+
+-- MEASUREMENTID NVARCHAR(50) NOT NULL,
+-- DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
+-- MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+-- [NAME] NVARCHAR(50) NOT NULL,
+-- UPPERLIMIT NVARCHAR(50) NOT NULL,
+-- LOWERLIMIT NVARCHAR(50) NOT NULL
+
+DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS
+GO
+
+CREATE PROCEDURE RUN_MEASUREMENT_FILTERS
+    @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
+AS
+
+BEGIN
+
+    BEGIN TRY
+
+        -- UPPERLIMIT outside of range.
+        -- needs work as UPPERLIMIT is coming through as an NVARCHAR not INT...
+        INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.MEASUREMENTID, 'NHRM', 'TABLE', 'M1', SYSDATETIME(), 'MODIFY'
+    FROM @DATA D
+    WHERE D.UPPERLIMIT > (5);
+
+    END TRY
+
+    BEGIN CATCH
+
+        -- catch errors here.
+
+    END CATCH
+
+END;
+
+
+
+----------------------------------------------------------------------------------------
+------------------------------- Transfer into DW PATIENT -------------------------------
+----------------------------------------------------------------------------------------
+-- Problem 5 insert the good data
+
+-- The idea is to transfer any remaining data to the patient table, 
+-- after it has been modified, or removed.
+
+GO;
+USE NHDW_LDT_0214;
+
+SELECT *
+FROM DW_MEASUREMENT
+
+
+go
+USE NHDW_LDT_0214;
+
+DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_DW_MEASUREMENT
+GO
+CREATE PROCEDURE TRANSFER_DATA_TO_DW_MEASUREMENT
+    @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
+AS
+
+BEGIN
+
+    BEGIN TRY
+
+        -- IF @DATA IS NOT NULL
+
+        INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
+        (MEASUREMENTID,
+        DATAPOINTNUMBER,
+        DWSOURCEBD,
+        DWSOURCETABLE,
+        MEASUREMENTNAME,
+        [NAME],
+        UPPERLIMIT,
+        LOWERLIMIT)
+    SELECT
+        D.MEASUREMENTID,
+        D.DATAPOINTNUMBER,
+        'NRHM',
+        'Measurement',
+        D.MEASUREMENTNAME,
+        D.[NAME],
+        D.UPPERLIMIT,
+        D.LOWERLIMIT
+    FROM @DATA D
+    -- WHERE D.URNUMBER NOT IN (SELECT URNUMBER
+    -- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT);
+    END TRY
+
+    BEGIN CATCH
+        BEGIN
+        DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+        THROW 50000, @ERROR, 1
+    END
+    END CATCH
+
+END
+
+
+EXEC TRANSFER_DATA_TO_DW_MEASUREMENT
+
+
+
+
+
+-- source DB table structures.
+
+-- INSERT INTO PatientMeasurement
+--     (MeasurementID,CategoryID,URNumber,Frequency,FrequencySetDate)
+-- VALUES(1, 1, '123456789', 28, GETDATE()),
+--     (2, 1, '123456789', 1, GETDATE()),
+--     (3, 1, '123456789', 1, GETDATE()),
+--     (4, 1, '123456789', 1, GETDATE()),
+--     (5, 1, '123456789', 7, GETDATE()),
+--     (1, 1, '987654321', 28, GETDATE()),
+--     (2, 1, '987654321', 1, GETDATE()),
+--     (3, 1, '987654321', 1, GETDATE()),
+--     (4, 1, '987654321', 1, GETDATE()),
+--     (5, 1, '987654321', 7, GETDATE());
+
+--     INSERT INTO Measurement
+--     (MeasurementName, Frequency)
+-- VALUES('ECOG Status', 28),
+--     ('Breathlessness', 1),
+--     ('Level of Pain', 1),
+--     ('Fluid Drain', 1),
+--     ('Quality of Life', 7);
+
+-- INSERT INTO DataPoint
+--     (MeasurementID,DataPointNumber,UpperLimit,LowerLimit,[Name])
+-- VALUES(1, 1, 4, 0, 'ECOG Status'),
+--     (2, 1, 5, 1, 'Breathlessness'),
+--     (3, 1, 5, 1, 'Level of Pain'),
+--     (4, 1, 600, 0, 'Fluid Drain'),
+--     (5, 1, 5, 1, 'Mobility'),
+--     (5, 2, 5, 1, 'Self-Care'),
+--     (5, 3, 5, 1, 'Usual-Activies'),
+--     (5, 4, 5, 1, 'Pain/Discomfort'),
+--     (5, 5, 5, 1, 'Anxiety/Depression'),
+--     (5, 6, 100, 0, 'QoL Vas Health Slider');
+
+
+
+
+
+
+
+
+
+
+
     -- (
     --     DWMEASUREMENTID INTEGER NOT NULL,
     --     MEASUREMENTID INTEGER NOT NULL,
@@ -42,67 +408,33 @@ BEGIN
     --     PRIMARY KEY (DWMEASUREMENTID)
     -- );
 
-    DROP TABLE IF EXISTS TEMPMEASUREMENTTABLE;
-    CREATE TABLE TEMPMEASUREMENTTABLE
-    (
-        MEASUREMENTID INT,
-        DATAPOINTNUMBER INT,
-        MEASUREMENTNAME NVARCHAR(100),
-        [NAME] NVARCHAR(100),
-        UPPERLIMIT INT,
-        LOWERLIMIT INT
-    )
 
-    DECLARE @INSERTQUERY NVARCHAR(MAX);
-    SET @INSERTQUERY = 'INSERT INTO TEMPMEASUREMENTTABLE SELECT MEASUREMENTID, DATAPOINTNUMBER, MEASUREMENTNAME, [NAME], UPPERLIMIT, LOWERLIMIT'
-
-    -- write the code to get the required data - excludes those identified above.
-    DECLARE @SELECTQUERY NVARCHAR(MAX);
-    SET @SELECTQUERY = '''SELECT URNUMBER, GENDER, YEAR(DOB) AS DOB,' +
-                    'SUBURB, POSTCODE, COUNTRYOFBIRTH, LIVESALONE, ACTIVE, ' +
-                    '(SELECT TOP 1 DIAGNOSIS FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [DIAGNOSIS],' +
-
-                    '(SELECT TOP 1 CATEGORYNAME FROM DDDM_TPS_1.DBO.PATIENTCATEGORY PC' +
-                    ' INNER JOIN DDDM_TPS_1.DBO.TEMPLATECATEGORY TC' +
-                    ' ON PC.CATEGORYID = TC.CATEGORYID' +
-                    ' WHERE PC.URNUMBER = P.URNUMBER) AS [CATEGORY], ' +
-
-                    '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
-                    ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
-
-    DECLARE @COMMAND NVARCHAR(MAX);
-    SET @COMMAND = @INSERTQUERY + ' FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
-
-    SELECT *
-    FROM TEMPMEASUREMENTTABLE
-    -- view table before 
-
-    PRINT('---- this is the command ----  ' + @COMMAND);
-    EXECUTE(@COMMAND);
-
-    SELECT *
-    FROM NHDW_LDT_0214.DBO.TEMPMEASUREMENTTABLE
--- view table after 
-
-END;
-
-EXEC TRANSFER_DATA_TO_TEMP_MEAS_STORAGE;
-
-SELECT *
-FROM DW_PATIENT
-
-SELECT *
-FROM TEMPTABLE
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+-- CREATE TABLE DW_MEASUREMENT
+--     pm DWMEASUREMENTID INTEGER NOT NULL, 
+--     pm MEASUREMENTID INTEGER NOT NULL,
+--     dp DATAPOINTNUMBER INTEGER NOT NULL,
+--     x DWSOURCEBD NVARCHAR(50) NOT NULL,
+--     x DWSOURCETABLE NVARCHAR(50) NOT NULL,
+--     me MEASUREMENTNAME NVARCHAR(50) NOT NULL,
+--     dp [NAME] NVARCHAR(50) NOT NULL,
+--     dp UPPERLIMIT INTEGER NOT NULL,
+--     dp LOWERLIMIT INTEGER NOT NULL,
+--     QUESTION NVARCHAR(255) NOT NULL,
+--     ANSWERNUMBER INTEGER NULL,
 
 
-SELECT *
-FROM
-    OPENROWSET('SQLNCLI', 'Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
-'SELECT * FROM DDDM_TPS_1.dbo.PATIENT');
-----------------------------------------------------------------------------------------
------------------------------------ Apply Filters --------------------------------------
-----------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
