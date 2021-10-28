@@ -1,3 +1,9 @@
+-- Student ID: 103200214
+-- Name: Lachlan Taylor
+-- 08/09/2021
+-- github repo https://github.com/LTaylor137/NHDW-DDL
+
+
 --------------------------------------------------------------------------------
 ----------------------------- General table lookups ----------------------------
 --------------------------------------------------------------------------------
@@ -14,68 +20,16 @@
 
 -- SELECT * FROM sys.objects
 
-
-SELECT *
-FROM datapoint
-
+-- SELECT * FROM datapoint
 
 -- USE NHDW_LDT_0214;
 
 
 --------------------------------------------------------------------------------
--------------------------------------------------------------------------------
+------------------ CREATE GET CONNECTION STRING FUNCTION  ----------------------
+--------------------------------------------------------------------------------
 
 
--- queries to use in Tims Source DB
-
--- SELECT * FROM INFORMATION_SCHEMA.TABLES;
-
-USE DDDM_TPS_1
-SELECT *
-FROM measurementrecord
-SELECT *
-FROM patientmeasurement
-SELECT *
-FROM datapointrecord
-SELECT *
-FROM measurement
-SELECT *
-FROM datapoint
-
-SELECT
-    MR.MeasurementRecordID,
-    MR.DateTimeRecorded,
-    MR.URNumber,
-    MR.MeasurementID,
-    MR.CategoryID,
-    DPR.DATAPOINTNUMBER,
-    DPR.VALUE,
-    DP.[NAME],
-    DP.LOWERLIMIT,
-    DP.UPPERLIMIT
-FROM measurementrecord MR
-    INNER JOIN datapointrecord DPR
-    ON MR.MeasurementRecordID = DPR.MeasurementRecordID
-    INNER JOIN datapoint DP
-    ON DP.MeasurementID = MR.MeasurementID
-
-
--- SELECT *
--- FROM measurementrecord
--- MeasurementRecordID
--- DateTimeRecorded
--- URNumber
--- MeasurementID
--- CategoryID
-
-
--- GO
-
-
-
-
-
--- CREATE GET CONNECTION STRING FUNCTION.
 USE NHDW_LDT_0214;
 
 DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
@@ -85,34 +39,6 @@ BEGIN
     RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
 END;
 GO
-
--- this worked to select required data
-BEGIN
-
-    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
-    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
-
-
-    DECLARE @SELECTQUERY0 NVARCHAR(MAX);
-
-    SET @SELECTQUERY0 = 
-                   '''SELECT MR.MeasurementRecordID, MR.DateTimeRecorded, MR.URNumber, ' + 
-                    'MR.MeasurementID, MR.CategoryID, DPR.DATAPOINTNUMBER, DPR.VALUE, ' + 
-                    'DP.[NAME], DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
-                    'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
-                    'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
-                    'ON DP.MeasurementID = MR.MeasurementID''';
-
-    DECLARE @COMMAND NVARCHAR(MAX);
-    SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY0 + ');'
-
-    PRINT('---- this is the command ----  ' + @COMMAND);
-    EXECUTE(@COMMAND);
-
-END
-
 
 
 --------------------------------------------------------------------------------
@@ -126,8 +52,8 @@ DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
 GO
 CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
     MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
-    DATETIMERECORDED DATETIME NOT NULL,
-    URNUMBER NVARCHAR(50) NOT NULL,
+    -- DATETIMERECORDED DATETIME NOT NULL,
+    -- URNUMBER NVARCHAR(50) NOT NULL,
     MEASUREMENTID NVARCHAR(50) NOT NULL,
     DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
     CATEGORYID NVARCHAR(50) NOT NULL,
@@ -172,7 +98,8 @@ BEGIN
     -- write the code to get the required data - excludes those identified above.
     DECLARE @SELECTQUERY_MS NVARCHAR(MAX);
     SET @SELECTQUERY_MS = 
-                    '''SELECT MR.MEASUREMENTRECORDID, MR.DATETIMERECORDED, MR.URNUMBER, ' + 
+                    '''SELECT MR.MEASUREMENTRECORDID, ' +
+                    -- MR.DATETIMERECORDED, MR.URNUMBER, ' + 
                     'MR.MEASUREMENTID, DPR.DATAPOINTNUMBER, MR.CATEGORYID, DP.[NAME], ' + 
                     'DPR.VALUE, DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
                     'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
@@ -199,7 +126,7 @@ BEGIN
 
     -- EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
 
-    EXEC TRANSFER_DATA_TO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
+    EXEC TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
 
 END;
 
@@ -253,12 +180,93 @@ BEGIN
     END TRY
 
     BEGIN CATCH
-
-        -- catch errors here.
-
+        BEGIN
+            DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+            THROW 50000, @ERROR, 1
+        END
     END CATCH
 
 END;
+
+
+
+
+----------------------------------------------------------------------------------------------------
+---------------------------------------------- Modify ----------------------------------------------
+----------------------------------------------------------------------------------------------------
+-- Problem 6 insert any data which the filter rules say needs to be transformed.
+
+
+
+-- DROP TYPE IF EXISTS INCORRECT_GENDER_URNUMBERS_TYPE;
+-- GO
+-- CREATE TYPE INCORRECT_GENDER_URNUMBERS_TYPE AS TABLE (
+--     URNUMBER NVARCHAR(10)
+-- );
+
+
+-- DROP PROCEDURE IF EXISTS RUN_PATIENT_MODIFY
+-- GO
+
+-- CREATE PROCEDURE RUN_MEASUREMENT_MODIFY
+--     @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
+-- AS
+-- BEGIN
+
+--     DECLARE @INCORRECT_GENDER_URNUMBERS AS INCORRECT_GENDER_URNUMBERS_TYPE
+--     INSERT INTO @INCORRECT_GENDER_URNUMBERS
+--     SELECT EE.SOURCE_ID
+--     FROM NHDW_LDT_0214.DBO.ERROR_EVENT EE
+--     WHERE EE.FILTERID = 'P1'
+--         AND EE.[ACTION] = 'MODIFY'
+
+--     SELECT 'wrong gender', *
+--     FROM @INCORRECT_GENDER_URNUMBERS;
+
+--     INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
+--         (
+--         URNUMBER,
+--         DWSOURCEDB,
+--         DWSOURCETABLE,
+--         GENDER,
+--         DOB,
+--         SUBURB,
+--         POSTCODE,
+--         COUNTRYOFBIRTH,
+--         LIVESALONE,
+--         ACTIVE,
+--         CATEGORYNAME,
+--         PROCEDUREDATE,
+--         DIAGNOSIS)
+--     SELECT
+--         D.URNUMBER,
+--         'NRHM',
+--         'Patient',
+--         (SELECT GS.NEW_VALUE
+--         FROM NHDW_LDT_0214.DBO.GENDERSPELLING GS
+--         WHERE D.GENDER = GS.INVALID_VALUE),
+--         -- 'FEMALE',
+--         D.DOB,
+--         D.SUBURB,
+--         D.POSTCODE,
+--         D.COUNTRYOFBIRTH,
+--         D.LIVESALONE,
+--         D.ACTIVE,
+--         D.CATEGORY,
+--         D.[PROCEDURE],
+--         DIAGNOSIS
+--     FROM @DATA D
+--     WHERE D.URNUMBER IN (SELECT URNUMBER
+--     FROM @INCORRECT_GENDER_URNUMBERS);
+
+--     DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+--     WHERE SOURCE_ID IN (SELECT URNUMBER
+--     FROM @INCORRECT_GENDER_URNUMBERS);
+
+-- END
+
+
+
 
 ----------------------------------------------------------------------------------------
 ----------------------- TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT -------------------------
@@ -282,8 +290,8 @@ BEGIN
 
     INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
         (MEASUREMENTRECORDID,
-        DATETIMERECORDED,
-        URNUMBER,
+        -- DATETIMERECORDED,
+        -- URNUMBER,
         DWSOURCEBD,
         DWSOURCETABLE,
         MEASUREMENTID,
@@ -295,8 +303,8 @@ BEGIN
         LOWERLIMIT)
     SELECT
         D.MEASUREMENTRECORDID,
-        D.DATETIMERECORDED,
-        D.URNUMBER,
+        -- D.DATETIMERECORDED,
+        -- D.URNUMBER,
         'DWSOURCEBD',
         'DWSOURCETABLE',
         D.MEASUREMENTID,
@@ -319,8 +327,6 @@ BEGIN
     END CATCH
 
 END;
-
-
 
 
 
@@ -404,6 +410,81 @@ END;
 
 
 
+
+
+
+-- queries to use in Tims Source DB
+
+-- SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+-- USE DDDM_TPS_1
+-- SELECT *
+-- FROM measurementrecord
+-- SELECT *
+-- FROM patientmeasurement
+-- SELECT *
+-- FROM datapointrecord
+-- SELECT *
+-- FROM measurement
+-- SELECT *
+-- FROM datapoint
+
+-- SELECT
+--     MR.MeasurementRecordID,
+--     MR.DateTimeRecorded,
+--     MR.URNumber,
+--     MR.MeasurementID,
+--     MR.CategoryID,
+--     DPR.DATAPOINTNUMBER,
+--     DPR.VALUE,
+--     DP.[NAME],
+--     DP.LOWERLIMIT,
+--     DP.UPPERLIMIT
+-- FROM measurementrecord MR
+--     INNER JOIN datapointrecord DPR
+--     ON MR.MeasurementRecordID = DPR.MeasurementRecordID
+--     INNER JOIN datapoint DP
+--     ON DP.MeasurementID = MR.MeasurementID
+
+
+-- SELECT *
+-- FROM measurementrecord
+-- MeasurementRecordID
+-- DateTimeRecorded
+-- URNumber
+-- MeasurementID
+-- CategoryID
+
+
+-- GO
+
+
+-- this worked to select required data
+-- BEGIN
+
+--     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+--     EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+
+--     DECLARE @SELECTQUERY0 NVARCHAR(MAX);
+
+--     SET @SELECTQUERY0 = 
+--                    '''SELECT MR.MeasurementRecordID, MR.DateTimeRecorded, MR.URNumber, ' + 
+--                     'MR.MeasurementID, MR.CategoryID, DPR.DATAPOINTNUMBER, DPR.VALUE, ' + 
+--                     'DP.[NAME], DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
+--                     'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
+--                     'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
+--                     'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
+--                     'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
+--                     'ON DP.MeasurementID = MR.MeasurementID''';
+
+--     DECLARE @COMMAND NVARCHAR(MAX);
+--     SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY0 + ');'
+
+--     PRINT('---- this is the command ----  ' + @COMMAND);
+--     EXECUTE(@COMMAND);
+
+-- END
 
 
 

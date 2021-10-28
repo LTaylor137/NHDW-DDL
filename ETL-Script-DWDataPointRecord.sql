@@ -1,3 +1,8 @@
+-- Student ID: 103200214
+-- Name: Lachlan Taylor
+-- 08/09/2021
+-- github repo https://github.com/LTaylor137/NHDW-DDL
+
 --------------------------------------------------------------------------------
 ----------------------------- General table lookups ----------------------------
 --------------------------------------------------------------------------------
@@ -14,13 +19,14 @@
 
 -- SELECT * FROM sys.objects
 
-
 SELECT *
-FROM datapoint
-
---------------------------------------------------------------------------------
------------------------------ General table lookups ----------------------------
--------------------------------------------------------------------------------
+FROM measurementrecord
+SELECT *
+FROM patientmeasurement
+SELECT *
+FROM datapointrecord
+SELECT *
+FROM measurement
 
 USE NHDW_LDT_0214;
 
