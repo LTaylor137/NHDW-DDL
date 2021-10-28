@@ -42,3 +42,9 @@ changed DOB from DATE to INT
 
 
 removed question and answer from TABLE DW_MEASUREMENT
+
+
+
+removed answer text from DWDATAPOINTRECORD Fact table.
+
+Added frequency set date into the fact table.

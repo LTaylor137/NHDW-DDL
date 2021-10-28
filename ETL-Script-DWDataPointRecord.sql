@@ -27,15 +27,29 @@ USE NHDW_LDT_0214;
 USE DDDM_TPS_1;
 
 
+USE DDDM_TPS_1
+SELECT *
+FROM measurementrecord
+SELECT *
+FROM patientmeasurement
+SELECT *
+FROM datapointrecord
+SELECT *
+FROM measurement
+SELECT *
+FROM datapoint
+
 
 -- select works correctly from within source DB.
-SELECT MR.URNumber, MR.MeasurementRecordID, MR.DateTimeRecorded, DPR.[VALUE]
+SELECT MR.URNumber, MR.MeasurementRecordID, CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY, 
+DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency
 FROM DDDM_TPS_1.dbo.measurementrecord MR
     INNER JOIN DDDM_TPS_1.DBO.PATIENT P
     ON MR.URNumber = P.URNUMBER
     INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR
     ON MR.MeasurementRecordID = DPR.MeasurementRecordID
-
+    INNER JOIN DDDM_TPS_1.dbo.patientmeasurement PM
+    ON MR.URNumber = PM.URNUMBER
 
 
 
@@ -70,9 +84,10 @@ GO
 CREATE TYPE TEMP_DATAPOINTRECORD_TABLE_TYPE AS TABLE (
     SRC_URNUMBER NVARCHAR(50) NOT NULL,
     SRC_MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
-    -- DWDATETIMEKEY INTEGER NOT NULL,
-    SCR_VALUE FLOAT(10) NOT NULL
-    -- FREQUENCY INTEGER NOT NULL
+    DWDATEKEY INTEGER NOT NULL,
+    SCR_VALUE FLOAT(10) NOT NULL,
+    FREQUENCYDATEKEY INTEGER NOT NULL,
+    FREQUENCY INTEGER NOT NULL
 );
 
 
@@ -111,13 +126,16 @@ BEGIN
     -- write the code to get the required data - excludes those identified above.
     DECLARE @SELECTQUERY03 NVARCHAR(MAX);
     SET @SELECTQUERY03 = 
-        '''SELECT MR.URNumber, MR.MeasurementRecordID, DPR.[VALUE] ' +
+        '''SELECT MR.URNumber, MR.MeasurementRecordID, ' +
+        'CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY, ' +
+        'DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency ' +
         'FROM DDDM_TPS_1.dbo.measurementrecord MR ' +
         'INNER JOIN DDDM_TPS_1.DBO.PATIENT P ' +
         'ON MR.URNumber = P.URNUMBER ' +
         'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' +
-        'ON MR.MeasurementRecordID = DPR.MeasurementRecordID''';
-
+        'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' +
+        'INNER JOIN DDDM_TPS_1.dbo.patientmeasurement PM ' +
+        'ON MR.URNumber = PM.URNUMBER''';
 
     DECLARE @COMMAND_DPR NVARCHAR(MAX);
     SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ');'
@@ -139,7 +157,16 @@ BEGIN
 
 END;
 
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
+-------------------------------------------------------------------------------------------
+
 EXEC ETL_PROCEDURE_DWDATAPOINTRECORD;
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
+-------------------------------------------------------------------------------------------
 
 
 
@@ -195,21 +222,25 @@ BEGIN
         (
     DWPATIENTID,
     DWMEASUREMENTID,
-    DWDATETIMEKEY,
+    DWDATEKEY,
     [VALUE],
-    ANSWERTEXT,
+    FREQUENCYDATEKEY,
     FREQUENCY
   ) 
         SELECT
-        D.SRC_URNUMBER,
-        D.SRC_MEASUREMENTRECORDID,
-        GETDATE(),
-        -- DWDATETIMEKEY INTEGER NOT NULL,
+        DWP.DWPATIENTID,
+        DWM.DWMEASUREMENTID,
+        DWDD.DateKey,
         D.SCR_VALUE,
-        'ANSWERTEXT',
-        0
-    -- FREQUENCY INTEGER NOT NULL
+        D.FREQUENCYDATEKEY,
+        D.FREQUENCY     
     FROM @DATA D
+    INNER JOIN NHDW_LDT_0214.DBO.DW_PATIENT DWP
+    ON D.SRC_URNUMBER = DWP.URNUMBER
+    INNER JOIN NHDW_LDT_0214.DBO.DW_MEASUREMENT DWM
+    ON D.SRC_MEASUREMENTRECORDID = DWM.MEASUREMENTRECORDID
+    INNER JOIN NHDW_LDT_0214.DBO.DW_DIM_DATE DWDD
+    ON D.DWDATEKEY = DWDD.DateKey
 
     END TRY
 

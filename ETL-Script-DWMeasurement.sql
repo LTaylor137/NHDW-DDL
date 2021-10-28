@@ -60,16 +60,16 @@ FROM measurementrecord MR
     ON DP.MeasurementID = MR.MeasurementID
 
 
-SELECT *
-FROM measurementrecord
-MeasurementRecordID
-DateTimeRecorded
-URNumber
-MeasurementID
-CategoryID
+-- SELECT *
+-- FROM measurementrecord
+-- MeasurementRecordID
+-- DateTimeRecorded
+-- URNumber
+-- MeasurementID
+-- CategoryID
 
 
-GO
+-- GO
 
 
 
@@ -180,10 +180,6 @@ BEGIN
                     'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
                     'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
                     'ON DP.MeasurementID = MR.MeasurementID''';
-
-
-    -- ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
-
 
     DECLARE @COMMAND_MS NVARCHAR(MAX);
     SET @COMMAND_MS = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY_MS + ');'
