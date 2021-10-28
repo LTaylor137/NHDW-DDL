@@ -404,11 +404,13 @@ GO;
 
 --- pull data from DDDM_TPS_1.DBO.PATIENT and insert it into a temptable.  ---
 
-DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_TEMP_PATIENT_STORAGE
+DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWPATIENT
 GO
-CREATE PROCEDURE TRANSFER_DATA_TO_TEMP_PATIENT_STORAGE
+CREATE PROCEDURE ETL_PROCEDURE_DWPATIENT
 AS
 BEGIN
+
+
 
     -- get a string of id's already in EE and DW tables.
     DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
@@ -460,8 +462,12 @@ SELECT 'TT 0', *
     VALUES
         ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
         ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-        ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
+        ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+        ('900000335', 'FEMALE', 1932, 'Shelbyville', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+        ('900000106', 'MALE', 1932, 'Shelbyville', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
     -- inserting test data to spoof filters.
+
+
 
     -- SELECT 'EE 1', *
     -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
@@ -479,24 +485,23 @@ SELECT 'TT 0', *
     -- SELECT 'TT 4', *
     -- FROM @TEMPPATIENTTABLE;
 
--- EXEC TRANSFER_DATA_TO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
+    EXEC TRANSFER_DATA_TO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
 
 END;
 
 
-EXEC TRANSFER_DATA_TO_TEMP_PATIENT_STORAGE;
+EXEC ETL_PROCEDURE_DWPATIENT;
 
 
 
 SELECT *
-FROM DW_PATIENT
+FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
 
 SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-SELECT *
-FROM TEMPTABLE
-
 
 
 ----------------------------------------------------------------------------------------

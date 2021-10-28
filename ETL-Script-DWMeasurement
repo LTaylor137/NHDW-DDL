@@ -27,30 +27,20 @@ FROM datapoint
 
 
 -- queries to use in Tims Source DB
--- USE DDDM_TPS_1
 
 -- SELECT * FROM INFORMATION_SCHEMA.TABLES;
 
--- SELECT * FROM PatientMeasurement
-
-
--- SELECT
---     PM.MEASUREMENTID,
---     DP.DATAPOINTNUMBER,
---     ME.MEASUREMENTNAME,
---     DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT
--- FROM DataPoint DP
---     INNER JOIN PatientMeasurement PM
---     ON DP.MeasurementID = PM.MeasurementID
---     INNER JOIN Measurement ME
---     ON PM.Frequency = ME.Frequency
-
 USE DDDM_TPS_1
-SELECT * FROM measurementrecord
-SELECT * FROM patientmeasurement
-SELECT * FROM datapointrecord
-SELECT * FROM measurement
-SELECT * FROM datapoint
+SELECT *
+FROM measurementrecord
+SELECT *
+FROM patientmeasurement
+SELECT *
+FROM datapointrecord
+SELECT *
+FROM measurement
+SELECT *
+FROM datapoint
 
 SELECT
     MR.MeasurementRecordID,
@@ -60,10 +50,9 @@ SELECT
     MR.CategoryID,
     DPR.DATAPOINTNUMBER,
     DPR.VALUE,
-    DP.MEASUREMENTNAME,
-    DP.[NAME], 
-    DP.UPPERLIMIT, 
-    DP.LOWERLIMIT
+    DP.[NAME],
+    DP.LOWERLIMIT,
+    DP.UPPERLIMIT
 FROM measurementrecord MR
     INNER JOIN datapointrecord DPR
     ON MR.MeasurementRecordID = DPR.MeasurementRecordID
@@ -97,14 +86,6 @@ BEGIN
 END;
 GO
 
-
-SELECT *
-FROM
-    OPENROWSET('SQLNCLI', 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
-'SELECT * FROM DDDM_TPS_1.dbo.Datapoint');
-
-
-
 -- this worked to select required data
 BEGIN
 
@@ -114,12 +95,15 @@ BEGIN
 
     DECLARE @SELECTQUERY0 NVARCHAR(MAX);
 
-    SET @SELECTQUERY0 = '''SELECT PM.MEASUREMENTID, DP.DATAPOINTNUMBER, ME.MEASUREMENTNAME, DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT' + 
-                    ' FROM DDDM_TPS_1.dbo.DataPoint DP ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.PatientMeasurement PM ' + 
-                    'ON DP.MeasurementID = PM.MeasurementID ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.Measurement ME ' + 
-                    'ON PM.Frequency = ME.Frequency''';
+    SET @SELECTQUERY0 = 
+                   '''SELECT MR.MeasurementRecordID, MR.DateTimeRecorded, MR.URNumber, ' + 
+                    'MR.MeasurementID, MR.CategoryID, DPR.DATAPOINTNUMBER, DPR.VALUE, ' + 
+                    'DP.[NAME], DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
+                    'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
+                    'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
+                    'ON DP.MeasurementID = MR.MeasurementID''';
 
     DECLARE @COMMAND NVARCHAR(MAX);
     SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY0 + ');'
@@ -135,21 +119,23 @@ END
 -------------------------------- Temp table type- ------------------------------
 --------------------------------------------------------------------------------
 
-
+USE NHDW_LDT_0214;
 
 -- create temp table type before procedure
 DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
 GO
 CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
+    MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
+    DATETIMERECORDED DATETIME NOT NULL,
+    URNUMBER NVARCHAR(50) NOT NULL,
     MEASUREMENTID NVARCHAR(50) NOT NULL,
     DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
+    CATEGORYID NVARCHAR(50) NOT NULL,
     MEASUREMENTNAME NVARCHAR(50) NOT NULL,
-    [NAME] NVARCHAR(50) NOT NULL,
+    MEASUREMENTVALUE NVARCHAR(50) NOT NULL,
     UPPERLIMIT NVARCHAR(50) NOT NULL,
     LOWERLIMIT NVARCHAR(50) NOT NULL
 );
-
-
 
 --------------------------------------------------------------------------------
 ------------------------------ Transfer Procedure ------------------------------
@@ -158,9 +144,9 @@ CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
 
 
 -- pull data from DDDM_TPS_1.DBO.PATIENT and insert it into a temptable. 
-DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_TEMP_MEAS_STORAGE
+DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWMEASUREMENT
 GO
-CREATE PROCEDURE TRANSFER_DATA_TO_TEMP_MEAS_STORAGE
+CREATE PROCEDURE ETL_PROCEDURE_DWMEASUREMENT
 AS
 BEGIN
 
@@ -183,17 +169,18 @@ BEGIN
     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
     EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
 
-    DECLARE @INSERTQUERY NVARCHAR(MAX);
-    SET @INSERTQUERY = 'INSERT INTO TEMPMEASUREMENTTABLE SELECT MEASUREMENTID, DATAPOINTNUMBER, MEASUREMENTNAME, [NAME], UPPERLIMIT, LOWERLIMIT'
-
     -- write the code to get the required data - excludes those identified above.
     DECLARE @SELECTQUERY_MS NVARCHAR(MAX);
-    SET @SELECTQUERY_MS = '''SELECT PM.MEASUREMENTID, DP.DATAPOINTNUMBER, ME.MEASUREMENTNAME, DP.[NAME], DP.UPPERLIMIT, DP.LOWERLIMIT' + 
-                        ' FROM DDDM_TPS_1.dbo.DataPoint DP ' + 
-                        'INNER JOIN DDDM_TPS_1.dbo.PatientMeasurement PM ' + 
-                        'ON DP.MeasurementID = PM.MeasurementID ' + 
-                        'INNER JOIN DDDM_TPS_1.dbo.Measurement ME ' + 
-                        'ON PM.Frequency = ME.Frequency''';
+    SET @SELECTQUERY_MS = 
+                    '''SELECT MR.MEASUREMENTRECORDID, MR.DATETIMERECORDED, MR.URNUMBER, ' + 
+                    'MR.MEASUREMENTID, DPR.DATAPOINTNUMBER, MR.CATEGORYID, DP.[NAME], ' + 
+                    'DPR.VALUE, DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
+                    'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
+                    'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
+                    'ON DP.MeasurementID = MR.MeasurementID''';
+
 
     -- ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
 
@@ -205,28 +192,31 @@ BEGIN
 
     DECLARE @TEMPMEASUREMENTTABLE AS TEMP_MEASUREMENT_TABLE_TYPE;
 
-    SELECT 'TT M 0', *
+    SELECT 'TT M A', *
     FROM @TEMPMEASUREMENTTABLE;
 
     INSERT INTO @TEMPMEASUREMENTTABLE
     EXECUTE(@COMMAND_MS);
 
-    SELECT 'TT M 1', *
+    SELECT 'TT M B', *
     FROM @TEMPMEASUREMENTTABLE;
 
--- EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
+    -- EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
 
--- EXEC TRANSFER_DATA_TO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
+    EXEC TRANSFER_DATA_TO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
 
 END;
 
-EXEC TRANSFER_DATA_TO_TEMP_MEAS_STORAGE;
+EXEC ETL_PROCEDURE_DWMEASUREMENT;
 
 
 
 
 SELECT *
-FROM DW_PATIENT
+FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
 
 SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
@@ -236,6 +226,7 @@ SELECT *
 FROM
     OPENROWSET('SQLNCLI', 'Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
 'SELECT * FROM DDDM_TPS_1.dbo.PATIENT');
+
 ----------------------------------------------------------------------------------------
 ----------------------------------- Apply Filters --------------------------------------
 ----------------------------------------------------------------------------------------
@@ -276,8 +267,6 @@ BEGIN
 
 END;
 
-
-
 ----------------------------------------------------------------------------------------
 ------------------------------- Transfer into DW PATIENT -------------------------------
 ----------------------------------------------------------------------------------------
@@ -308,22 +297,30 @@ BEGIN
 
         -- IF @DATA IS NOT NULL
 
-        INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
-        (MEASUREMENTID,
-        DATAPOINTNUMBER,
+    INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
+        (MEASUREMENTRECORDID,
+        DATETIMERECORDED,
+        URNUMBER,
         DWSOURCEBD,
         DWSOURCETABLE,
+        MEASUREMENTID,
+        DATAPOINTNUMBER,
+        CATEGORYID,
         MEASUREMENTNAME,
-        [NAME],
+        MEASUREMENTVALUE,
         UPPERLIMIT,
         LOWERLIMIT)
     SELECT
+        D.MEASUREMENTRECORDID,
+        D.DATETIMERECORDED,
+        D.URNUMBER,
+        'DWSOURCEBD',
+        'DWSOURCETABLE',
         D.MEASUREMENTID,
         D.DATAPOINTNUMBER,
-        'NRHM',
-        'Measurement',
+        D.CATEGORYID,
         D.MEASUREMENTNAME,
-        D.[NAME],
+        D.MEASUREMENTVALUE,
         D.UPPERLIMIT,
         D.LOWERLIMIT
     FROM @DATA D
