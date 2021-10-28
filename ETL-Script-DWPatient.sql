@@ -317,8 +317,8 @@ BEGIN
                     ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
 
     DECLARE @COMMAND NVARCHAR(MAX);
-    SET @COMMAND = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
-    PRINT('---- this is the command:   ' + @COMMAND);
+    SET @COMMAND_P = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
+    PRINT('---- this is the command:   ' + @COMMAND_P);
 
     DECLARE @TEMPPATIENTTABLE AS TEMP_PATIENT_TABLE_TYPE;
 
@@ -326,7 +326,7 @@ BEGIN
     FROM @TEMPPATIENTTABLE;
 
     INSERT INTO @TEMPPATIENTTABLE
-    EXECUTE(@COMMAND);
+    EXECUTE(@COMMAND_P);
 
     -- -- inserting test data to spoof gender filters.
     INSERT INTO @TEMPPATIENTTABLE
