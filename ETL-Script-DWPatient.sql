@@ -328,31 +328,26 @@ BEGIN
     INSERT INTO @TEMPPATIENTTABLE
     EXECUTE(@COMMAND);
 
-    -- -- inserting test data to spoof filters.
-    -- INSERT INTO @TEMPPATIENTTABLE
-    -- VALUES
-    --     ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('900000335', 'FEMALE', 1932, 'Shelbyville', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('900000106', 'MALE', 1932, 'Shelbyville', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
+    -- -- inserting test data to spoof gender filters.
+    INSERT INTO @TEMPPATIENTTABLE
+    VALUES
+        ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+        ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+        ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
 
     SELECT 'TT B', *
     FROM @TEMPPATIENTTABLE;
 
-    -- EXEC RUN_PATIENT_FILTERS @DATA = @TEMPPATIENTTABLE
+    EXEC RUN_PATIENT_FILTERS @DATA = @TEMPPATIENTTABLE;
 
-    -- EXEC RUN_PATIENT_MODIFY @DATA = @TEMPPATIENTTABLE;
+    EXEC RUN_PATIENT_MODIFY @DATA = @TEMPPATIENTTABLE;
 
-    -- SELECT 'EE 3', *
-    -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-    -- SELECT 'TT 4', *
-    -- FROM @TEMPPATIENTTABLE;
-
-    EXEC TRANSFER_DATA_TO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
+    EXEC TRANSFER_GOOD_DATA_INTO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
 
 END;
+
+
+
 
 
 -------------------------------------------------------------------------------------------
@@ -362,19 +357,22 @@ END;
 EXEC ETL_PROCEDURE_DWPATIENT;
 
 -------------------------------------------------------------------------------------------
-------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
+-------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------
 
 
 
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_PATIENT
 
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
 
 SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+SELECT *
+FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
 
 
 ----------------------------------------------------------------------------------------
@@ -394,31 +392,31 @@ BEGIN
     BEGIN TRY
 
             -- Gender != Male or FEMALE
-    --         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-    --     (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    -- SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P1', SYSDATETIME(), 'MODIFY'
-    -- FROM @DATA D
-    -- WHERE D.GENDER NOT IN ('MALE', 'FEMALE');
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P1', SYSDATETIME(), 'MODIFY'
+    FROM @DATA D
+    WHERE D.GENDER NOT IN ('MALE', 'FEMALE');
 
-    --         -- DOB != 4
-    --         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-    --     (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    -- SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P2', SYSDATETIME(), 'SKIP'
-    -- FROM @DATA D
-    -- WHERE LEN(D.DOB) != 4;
+            -- DOB != 4
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P2', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE LEN(D.DOB) != 4;
 
-    --         -- POSTCODE != 4
-    --         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-    --     (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    -- SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P3', SYSDATETIME(), 'SKIP'
-    -- FROM @DATA D
-    -- WHERE LEN(D.POSTCODE) != 4;
+            -- POSTCODE != 4
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P3', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE LEN(D.POSTCODE) != 4;
 
-    --         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-    --     (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    -- SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P4', SYSDATETIME(), 'SKIP'
-    -- FROM @DATA D
-    -- WHERE D.DIAGNOSIS IS NULL;
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P4', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE D.DIAGNOSIS IS NULL;
 
             INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
@@ -426,11 +424,11 @@ BEGIN
     FROM @DATA D
     WHERE D.CATEGORY IS NULL;
 
-    --         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-    --     (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    -- SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P6', SYSDATETIME(), 'SKIP'
-    -- FROM @DATA D
-    -- WHERE D.[PROCEDURE] IS NULL;
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P6', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE D.[PROCEDURE] IS NULL;
 
     END TRY 
 
@@ -482,11 +480,8 @@ BEGIN
     WHERE EE.FILTERID = 'P1'
         AND EE.[ACTION] = 'MODIFY'
 
-    SELECT *
+    SELECT 'wrong gender', *
     FROM @INCORRECT_GENDER_URNUMBERS;
-
-    SELECT 'before', *
-    FROM DW_PATIENT
 
     INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
         (
@@ -524,62 +519,21 @@ BEGIN
     WHERE D.URNUMBER IN (SELECT URNUMBER
     FROM @INCORRECT_GENDER_URNUMBERS);
 
-    SELECT 'after', *
-    FROM DW_PATIENT
+SELECT 'hg', *
+FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+    DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    WHERE SOURCE_ID IN (SELECT URNUMBER
+    FROM @INCORRECT_GENDER_URNUMBERS);
+
+    SELECT 'm', *
+FROM NHDW_LDT_0214.DBO.ERROR_EVENT
 
 END
 
 
-
-
-
-
--- GO
--- DROP PROCEDURE IF EXISTS MODIFY_1_GENDER
-
--- GO
--- CREATE PROCEDURE MODIFY_1_GENDER @DATA TEMP_PATIENT_TABLE_TYPE READONLY
--- AS
--- BEGIN
-
---     -- this works to update all gender values incorrect or not, to a 1 character M or F in order to save space on DW
---     UPDATE @TEMPPATIENTTABLE
---     SET GENDER = TS.NEW_VALUE
---     FROM @DATA D
---         JOIN NHDW_LDT_0214.DBO.TITLESPELLING TS
---         ON D.GENDER = TS.INVALID_VALUE
-
--- END;
-
--- EXEC MODIFY_1_GENDER;
-
-
-
--- TODO should procedure date be converted from string to DATETIME?
-
--- DROP PROCEDURE IF EXISTS MODIFY_2_PROCEDUREDATE
--- GO
--- CREATE PROCEDURE MODIFY_2_PROCEDUREDATE
--- AS
--- BEGIN
-
---     -- this works to update all gender values incorrect or not, to a 1 character M or F in order to save space on DW
---     UPDATE NHDW_LDT_0214.DBO.TEMPTABLE
---     SET [PROCEDURE] = (SELECT CONVERT(DATETIME, [PROCEDURE], 102))
---     FROM NHDW_LDT_0214.DBO.TEMPTABLE TT
-
--- END;
-
--- EXEC MODIFY_2_PROCEDUREDATE;
-
-
--- SELECT *
--- FROM TEMPTABLE
-
--- Sep  6 2020 12:00AM
-
 ----------------------------------------------------------------------------------------
-------------------------------- Transfer into DW PATIENT -------------------------------
+------------------------ Transfer good data into DW PATIENT ----------------------------
 ----------------------------------------------------------------------------------------
 -- Problem 5 insert the good data
 
@@ -590,9 +544,9 @@ END
 go
 USE NHDW_LDT_0214;
 
-DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_DW_PATIENT
+DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_PATIENT
 GO
-CREATE PROCEDURE TRANSFER_DATA_TO_DW_PATIENT
+CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_PATIENT
     @DATA TEMP_PATIENT_TABLE_TYPE READONLY
 AS
 
@@ -632,10 +586,10 @@ BEGIN
         D.[PROCEDURE],
         D.DIAGNOSIS
     FROM @DATA D
--- WHERE D.URNUMBER NOT IN (SELECT URNUMBER
--- FROM NHDW_LDT_0214.DBO.DW_PATIENT)
--- AND D.URNUMBER NOT IN (SELECT URNUMBER
--- FROM NHDW_LDT_0214.DBO.ERROR_EVENT);
+    WHERE D.URNUMBER NOT IN (SELECT SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+    AND D.URNUMBER NOT IN (SELECT URNUMBER 
+    FROM NHDW_LDT_0214.DBO.DW_PATIENT);
 -- END TRY
 
 -- BEGIN CATCH

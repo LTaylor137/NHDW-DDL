@@ -203,9 +203,17 @@ BEGIN
 
 END;
 
+
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWMEASUREMENT -----------------------------
+-------------------------------------------------------------------------------------------
+
 EXEC ETL_PROCEDURE_DWMEASUREMENT;
 
-
+-------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
 
 
 SELECT *
@@ -218,23 +226,12 @@ SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
 
 
-SELECT *
-FROM
-    OPENROWSET('SQLNCLI', 'Server=dad.cbrifzw8clzr.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;',
-'SELECT * FROM DDDM_TPS_1.dbo.PATIENT');
-
 ----------------------------------------------------------------------------------------
 ----------------------------------- Apply Filters --------------------------------------
 ----------------------------------------------------------------------------------------
 
--- MEASUREMENTID NVARCHAR(50) NOT NULL,
--- DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
--- MEASUREMENTNAME NVARCHAR(50) NOT NULL,
--- [NAME] NVARCHAR(50) NOT NULL,
--- UPPERLIMIT NVARCHAR(50) NOT NULL,
--- LOWERLIMIT NVARCHAR(50) NOT NULL
 
-DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS
+DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_FILTERS
 GO
 
 CREATE PROCEDURE RUN_MEASUREMENT_FILTERS
@@ -264,26 +261,16 @@ BEGIN
 END;
 
 ----------------------------------------------------------------------------------------
-------------------------------- Transfer into DW PATIENT -------------------------------
+----------------------- TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT -------------------------
 ----------------------------------------------------------------------------------------
 -- Problem 5 insert the good data
-
--- The idea is to transfer any remaining data to the patient table, 
--- after it has been modified, or removed.
-
-GO;
-USE NHDW_LDT_0214;
-
-SELECT *
-FROM DW_MEASUREMENT
-
 
 go
 USE NHDW_LDT_0214;
 
-DROP PROCEDURE IF EXISTS TRANSFER_DATA_TO_DW_MEASUREMENT
+DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
 GO
-CREATE PROCEDURE TRANSFER_DATA_TO_DW_MEASUREMENT
+CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
     @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
 AS
 
@@ -331,10 +318,10 @@ BEGIN
     END
     END CATCH
 
-END
+END;
 
 
-EXEC TRANSFER_DATA_TO_DW_MEASUREMENT
+
 
 
 
