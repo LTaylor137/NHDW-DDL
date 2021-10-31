@@ -74,6 +74,27 @@ CREATE PROCEDURE ETL_PROCEDURE_DWMEASUREMENT
 AS
 BEGIN
 
+    -- -- get a string of id's already in EE and DW tables.
+    -- DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    -- SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + MEASUREMENTRECORDID
+    -- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+    -- -- WHERE DWSOURCEDB = 'NHRM';
+    -- IF (@ALREADY_IN_DIM IS NULL)
+    --     SET @ALREADY_IN_DIM = '0'
+
+    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    -- WHERE DWSOURCEDB = 'NHRM';
+    IF (@IN_ERROR_EVENT IS NULL)
+        SET @IN_ERROR_EVENT = '0'
+
+    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    SET @TO_EXCLUDE = @IN_ERROR_EVENT;
+    -- SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+
+    -- PRINT @TO_EXCLUDE;
+
     -- get connection string
     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
     EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
@@ -88,7 +109,8 @@ BEGIN
                     'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
                     'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
                     'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
-                    'ON DP.MeasurementID = MR.MeasurementID''';
+                    'ON DP.MeasurementID = MR.MeasurementID ' +
+                    'WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
 
     DECLARE @COMMAND_MS NVARCHAR(MAX);
     SET @COMMAND_MS = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY_MS + ');'

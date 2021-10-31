@@ -48,3 +48,6 @@ removed name from TABLE DW_MEASUREMENT
 removed answer text from DWDATAPOINTRECORD Fact table.
 
 Added frequency set date into the fact table.
+
+
+I have added a new concatenated key value into xxx

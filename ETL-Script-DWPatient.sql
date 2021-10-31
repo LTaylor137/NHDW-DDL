@@ -316,7 +316,7 @@ BEGIN
                     '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
                     ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
 
-    DECLARE @COMMAND NVARCHAR(MAX);
+    DECLARE @COMMAND_P NVARCHAR(MAX);
     SET @COMMAND_P = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
     PRINT('---- this is the command:   ' + @COMMAND_P);
 
@@ -329,11 +329,11 @@ BEGIN
     EXECUTE(@COMMAND_P);
 
     -- -- inserting test data to spoof gender filters.
-    INSERT INTO @TEMPPATIENTTABLE
-    VALUES
-        ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-        ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-        ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
+    -- INSERT INTO @TEMPPATIENTTABLE
+    -- VALUES
+    --     ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+    --     ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+    --     ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
 
     SELECT 'TT B', *
     FROM @TEMPPATIENTTABLE;
@@ -480,7 +480,7 @@ BEGIN
     WHERE EE.FILTERID = 'P1'
         AND EE.[ACTION] = 'MODIFY'
 
-    SELECT 'wrong gender', *
+    SELECT 'wrong gender' AS WRONGGENDER, *
     FROM @INCORRECT_GENDER_URNUMBERS;
 
     INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
@@ -505,7 +505,6 @@ BEGIN
         (SELECT GS.NEW_VALUE
         FROM NHDW_LDT_0214.DBO.GENDERSPELLING GS
         WHERE D.GENDER = GS.INVALID_VALUE),
-        -- 'FEMALE',
         D.DOB,
         D.SUBURB,
         D.POSTCODE,
