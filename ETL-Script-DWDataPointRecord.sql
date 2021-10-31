@@ -47,7 +47,7 @@ FROM datapoint
 
 
 -- select works correctly from within source DB.
-SELECT MR.URNumber, MR.MeasurementRecordID, CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY,
+SELECT MR.URNumber, MR.MeasurementRecordID, DP.DataPointNumber, CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY,
     DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency
 FROM DDDM_TPS_1.dbo.measurementrecord MR
     INNER JOIN DDDM_TPS_1.DBO.PATIENT P
@@ -56,8 +56,24 @@ FROM DDDM_TPS_1.dbo.measurementrecord MR
     ON MR.MeasurementRecordID = DPR.MeasurementRecordID
     INNER JOIN DDDM_TPS_1.dbo.patientmeasurement PM
     ON MR.URNumber = PM.URNUMBER
+    INNER JOIN DDDM_TPS_1.dbo.datapoint DP
+    ON MR.MeasurementID = DP.MeasurementID
+    -- INNER JOIN DDDM_TPS_1.dbo.datapoint DP
+    -- ON MR.MeasurementRecordID = DP.MeasurementRecordID
 
+SET @SELECTQUERY = '''SELECT
+ M.MeasurementID, 
+DP.DATAPOINTNUMBER,
+ M.MEASUREMENTNAME, 
 
+ DP.UPPERLIMIT, 
+ DP.LOWERLIMIT, 
+ DP.NAME, ' +
+ 'M.FREQUENCY 
+ 
+ FROM DDDM_TPS_1.DBO.MEASUREMENT M ' +
+                    'INNER JOIN DDDM_TPS_1.DBO.DATAPOINT DP ' +
+                    'ON M.MEASUREMENTID = DP.MEASUREMENTID'
 
 ------------------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------
@@ -229,6 +245,7 @@ GO
 CREATE TYPE TEMP_DATAPOINTRECORD_TABLE_TYPE AS TABLE (
     SRC_URNUMBER NVARCHAR(50) NOT NULL,
     SRC_MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
+    SRC_DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
     DWDATEKEY NVARCHAR(50) NOT NULL,
     SRC_VALUE FLOAT(10) NOT NULL,
     FREQUENCYDATEKEY INTEGER NOT NULL,
@@ -267,24 +284,25 @@ AS
 BEGIN
    
     DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + DPRCONCATPK 
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + '''' + DPRCONCATPK + ''''
     FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
     -- PRINT @ALREADY_IN_DIM;
 
     DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
-    SELECT @IN_ERROR_EVENT = COALESCE('' + @IN_ERROR_EVENT + ',', '' + '') + SOURCE_ID
+    SELECT @IN_ERROR_EVENT = COALESCE('' + @IN_ERROR_EVENT + ',', '' + '') + '''' + SOURCE_ID + ''''
     FROM NHDW_LDT_0214.DBO.ERROR_EVENT
     WHERE LEN(SOURCE_ID) > 10;
     -- PRINT @IN_ERROR_EVENT;
 
     IF (@ALREADY_IN_DIM IS NULL)
-        SET @ALREADY_IN_DIM = '0'
+        SET @ALREADY_IN_DIM = '''0'''
 
     IF (@IN_ERROR_EVENT IS NULL)
-        SET @IN_ERROR_EVENT = '0'
+        SET @IN_ERROR_EVENT = '''0'''
 
     DECLARE @TO_EXCLUDE NVARCHAR(MAX)
     SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    -- SET @TO_EXCLUDE = CAST(@TO_EXCLUDE as NVARCHAR(MAX))
 
     print 'List of IDs to exclude ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
 
@@ -295,7 +313,7 @@ BEGIN
     -- write the code to get the required data - excludes those identified above.
     DECLARE @SELECTQUERY03 NVARCHAR(MAX);
     SET @SELECTQUERY03 = 
-        '''SELECT MR.URNumber, MR.MeasurementRecordID, ' +
+        '''SELECT MR.URNumber, MR.MeasurementRecordID, DPR.Datapointnumber,' +
         'CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY, ' +
         'DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency ' +
         'FROM DDDM_TPS_1.dbo.measurementrecord MR ' +
@@ -316,7 +334,7 @@ BEGIN
     ELSE
         BEGIN
               SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ') SOURCE ' +
-                                 'WHERE CONCAT(SOURCE.URNumber, ''-'', SOURCE.MeasurementRecordID, ''-'', SOURCE.DWDATETIMEKEY) NOT IN (' + @TO_EXCLUDE + ');'
+                                 'WHERE CONCAT(SOURCE.URNumber, ''-'', SOURCE.MeasurementRecordID, ''-'', CONVERT(CHAR(8), SOURCE.DWDATETIMEKEY, 112)) NOT IN (' + @TO_EXCLUDE + ');'
 
         END
 
@@ -365,7 +383,8 @@ SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
 
 
-
+DELETE FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD 
+WHERE DPRCONCATPK = '900000335-1-1-20200110'
 
 ----------------------------------------------------------------------------------------
 ----------------------------------- Apply Filters --------------------------------------
@@ -390,7 +409,7 @@ BEGIN
 
             INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT (SELECT concat(D.SRC_URNUMBER, '-', D.SRC_MEASUREMENTRECORDID,'-', D.DWDATEKEY)),
+    SELECT (SELECT concat(D.SRC_URNUMBER, '-', D.SRC_MEASUREMENTRECORDID,'-', D.SRC_DATAPOINTNUMBER,'-', D.DWDATEKEY)),
 -- '123',
     -- FROM @DATA D
     --     INNER JOIN NHDW_LDT_0214.DBO.DW_PATIENT DWP
@@ -445,6 +464,7 @@ BEGIN
         DPRCONCATPK,
         DWPATIENTID,
         DWMEASUREMENTID,
+        DWDATAPOINTNUMBER,
         DWDATEKEY,
         [VALUE],
         FREQUENCYDATEKEY,
@@ -452,19 +472,11 @@ BEGIN
         )
     SELECT
 
-
---     (SELECT P.URNUMBER, P.DWPATIENTID, M.DWMEASUREMENTID, M.MEASUREMENTRECORDID, DPR.DWDATEKEY,
--- concat(P.URNUMBER, '-', M.DWMEASUREMENTID,'-', DPR.DWDATEKEY)
--- FROM DW_PATIENT P 
--- INNER JOIN DW_DWDATAPOINTRECORD DPR
--- ON P.DWPATIENTID = DPR.DWPATIENTID
--- INNER JOIN DW_MEASUREMENT M
--- ON M.DWMEASUREMENTID = DPR.DWMEASUREMENTID),
-
-concat(DWP.URNUMBER, '-', DWM.DWMEASUREMENTID,'-', DWDD.DateKey),
+concat(DWP.URNUMBER, '-', DWM.DWMEASUREMENTID,'-', DWM.DATAPOINTNUMBER,'-', DWDD.DateKey),
 
         DWP.DWPATIENTID,
         DWM.DWMEASUREMENTID,
+        DWM.DATAPOINTNUMBER,
         DWDD.DateKey,
         D.SRC_VALUE,
         D.FREQUENCYDATEKEY,
@@ -476,6 +488,8 @@ concat(DWP.URNUMBER, '-', DWM.DWMEASUREMENTID,'-', DWDD.DateKey),
         ON D.SRC_MEASUREMENTRECORDID = DWM.MEASUREMENTRECORDID
         INNER JOIN NHDW_LDT_0214.DBO.DW_DIM_DATE DWDD
         ON D.DWDATEKEY = DWDD.DateKey
+    WHERE concat(DWP.URNUMBER, '-', DWM.DWMEASUREMENTID,'-', DWM.DATAPOINTNUMBER,'-', DWDD.DateKey)
+    NOT IN (SELECT DPRCONCATPK FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD)
 
     END TRY
 

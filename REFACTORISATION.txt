@@ -51,3 +51,6 @@ Added frequency set date into the fact table.
 
 
 I have added a new concatenated key value into xxx
+
+I had to add DPR.DataPointNumber, FROM DDDM_TPS_1.dbo.datapointrecord DPR
+as I was getting PK conflicts, so needed to make entries more unique.
