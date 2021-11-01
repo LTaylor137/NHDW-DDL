@@ -1,56 +1,54 @@
 
+DWPATIENT TABLE
+
+        CATEGORYID IS NOT A PRIMARY KEY.
+        mistake was overlooked in data dictionary document.
+
+        Removed Diagnosis. it's not useful for analysis
+
+        added constraints to lives alone and active.
+
+        changed DOB datetime to INT.
+
+        amended DW_PATIENT TABLE to reflect data in source.
+
+        PREFFEREDLANGUAGE NVARCHAR(50) NOT NULL,
+        LIVESALONE NVARCHAR(3) NOT NULL
+            CHECK(LIVESALONE IN ('Yes','No')),
+        ACTIVE NVARCHAR(3) NOT NULL
+            CHECK(ACTIVE IN ('Yes','No')),
+        >>>>> TO >>>>>
+        LIVESALONE NVARCHAR(1) NOT NULL
+            CHECK(LIVESALONE IN ('1','0')),
+        ACTIVE NVARCHAR(1) NOT NULL
+            CHECK(ACTIVE IN ('1','0')),
+
+        Removed Category ID from patient table, redundant as category name exists.
+        changed DOB from DATE to INT
 
 
 
+DW_MEASUREMENT TABLE
 
-TABLE DWPATIENT
-CATEGORYID IS NOT A PRIMARY KEY.
-mistake was overlooked in data dictionary document.
-
-Removed Diagnosis. it's not useful for analysis
-
-added constraints to lives alone and active.
-
-changed DOB datetime to DATE.
+        removed question and answer from TABLE DW_MEASUREMENT
+        removed name from TABLE DW_MEASUREMENT
 
 
-DWDataPoint TABLE
 
-removed question text
+DW_DWDATAPOINTRECORD TABLE
 
-removed notes from dwintervention
-check this in datawarehouse design doc.
+        removed question text
 
+        removed notes from dwintervention
+        check this in datawarehouse design doc.
 
-amended DW_PATIENT TABLE to reflect data in source.
+        removed answer text from DWDATAPOINTRECORD Fact table.
 
-    PREFFEREDLANGUAGE NVARCHAR(50) NOT NULL,
-    LIVESALONE NVARCHAR(3) NOT NULL
-        CHECK(LIVESALONE IN ('Yes','No')),
-    ACTIVE NVARCHAR(3) NOT NULL
-        CHECK(ACTIVE IN ('Yes','No')),
+        Added frequency set date into the fact table.
 
-     >>>>> TO >>>>>
+        I have added a new concatenated key value into DW_DWDATAPOINTRECORD TABLE
+        to make it possible to check new entries against existing entries.
 
-   LIVESALONE NVARCHAR(1) NOT NULL
-        CHECK(LIVESALONE IN ('1','0')),
-    ACTIVE NVARCHAR(1) NOT NULL
-        CHECK(ACTIVE IN ('1','0')),
-
-Removed Category ID from patient table, redundant as category name exists.
-changed DOB from DATE to INT
-
-
-removed question and answer from TABLE DW_MEASUREMENT
-removed name from TABLE DW_MEASUREMENT
-
-
-removed answer text from DWDATAPOINTRECORD Fact table.
-
-Added frequency set date into the fact table.
-
-
-I have added a new concatenated key value into xxx
-
-I had to add DPR.DataPointNumber, FROM DDDM_TPS_1.dbo.datapointrecord DPR
-as I was getting PK conflicts, so needed to make entries more unique.
+        I had to add DPR.DataPointNumber, FROM DDDM_TPS_1.dbo.datapointrecord DPR
+        to this concatenated key value as I was getting PK conflicts, 
+        so needed to make entries more unique.

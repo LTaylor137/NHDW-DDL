@@ -4,29 +4,9 @@
 -- github repo https://github.com/LTaylor137/NHDW-DDL
 
 
---------------------------------------------------------------------------------
------------------------------ General table lookups ----------------------------
---------------------------------------------------------------------------------
-
--- SELECT NAME FROM SYS.DATABASES;
-
--- SELECT * FROM INFORMATION_SCHEMA.TABLES;
-
--- SELECT * FROM master.sys.sql_logins;
-
--- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
-
--- USE DDDM_TPS_1
-
--- SELECT * FROM sys.objects
-
--- SELECT * FROM datapoint
-
--- USE NHDW_LDT_0214;
-
 
 --------------------------------------------------------------------------------
------------------- CREATE GET CONNECTION STRING FUNCTION  ----------------------
+-------------------- CREATE GET CONNECTION STRING FUNCTION  --------------------
 --------------------------------------------------------------------------------
 
 
@@ -41,15 +21,18 @@ END;
 GO
 
 
+
 --------------------------------------------------------------------------------
--------------------------------- Temp table type- ------------------------------
+------------------------- Create a temporary table type ------------------------
 --------------------------------------------------------------------------------
+
+
 
 USE NHDW_LDT_0214;
 
--- create temp table type before procedure
 DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
 GO
+
 CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
     MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
     MEASUREMENTID NVARCHAR(50) NOT NULL,
@@ -61,39 +44,39 @@ CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
     LOWERLIMIT NVARCHAR(50) NOT NULL
 );
 
+
+
 --------------------------------------------------------------------------------
 ------------------------------ Transfer Procedure ------------------------------
 --------------------------------------------------------------------------------
 
 
 
--- pull data from DDDM_TPS_1.DBO.PATIENT and insert it into a temptable. 
 DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWMEASUREMENT
 GO
+
 CREATE PROCEDURE ETL_PROCEDURE_DWMEASUREMENT
 AS
 BEGIN
 
     -- -- get a string of id's already in EE and DW tables.
-    -- DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    -- SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + MEASUREMENTRECORDID
-    -- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
-    -- -- WHERE DWSOURCEDB = 'NHRM';
-    -- IF (@ALREADY_IN_DIM IS NULL)
-    --     SET @ALREADY_IN_DIM = '0'
+    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + MEASUREMENTRECORDID
+    FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+    IF (@ALREADY_IN_DIM IS NULL)
+        SET @ALREADY_IN_DIM = '0'
 
     DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
     SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
     FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    -- WHERE DWSOURCEDB = 'NHRM';
     IF (@IN_ERROR_EVENT IS NULL)
         SET @IN_ERROR_EVENT = '0'
 
     DECLARE @TO_EXCLUDE NVARCHAR(MAX)
-    SET @TO_EXCLUDE = @IN_ERROR_EVENT;
-    -- SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    -- SET @TO_EXCLUDE = @IN_ERROR_EVENT;
+    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
 
-    -- PRINT @TO_EXCLUDE;
 
     -- get connection string
     DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
@@ -134,7 +117,6 @@ BEGIN
     SELECT 'TT M B', *
     FROM @TEMPMEASUREMENTTABLE;
 
-
     EXEC RUN_MEASUREMENT_FILTERS @DATA = @TEMPMEASUREMENTTABLE;
 
     EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
@@ -149,11 +131,16 @@ END;
 ------------------------- EXECUTE ETL_PROCEDURE_DWMEASUREMENT -----------------------------
 -------------------------------------------------------------------------------------------
 
+
+
 EXEC ETL_PROCEDURE_DWMEASUREMENT;
+
+
 
 -------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------
+
 
 
 SELECT *
@@ -163,7 +150,11 @@ SELECT *
 FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
 
 SELECT *
+FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+SELECT *
 FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
 
 
 ----------------------------------------------------------------------------------------
@@ -185,32 +176,32 @@ BEGIN
         -- UPPERLIMIT outside of range.
         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'TABLE', 'M1', SYSDATETIME(), 'MODIFY'
+    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'measurementrecord', 'M1', SYSDATETIME(), 'MODIFY'
     FROM @DATA D
     WHERE D.MEASUREMENTID = 3 AND D.MEASUREMENTVALUE > (5);
 
             -- UPPERLIMIT outside of range.
         INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'TABLE', 'M2', SYSDATETIME(), 'MODIFY'
+    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'measurementrecord', 'M2', SYSDATETIME(), 'MODIFY'
     FROM @DATA D
     WHERE D.MEASUREMENTID = 3 AND D.MEASUREMENTVALUE < (1);
 
                 INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'TABLE', 'M3', SYSDATETIME(), 'SKIP'
+    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'measurementrecord', 'M3', SYSDATETIME(), 'SKIP'
     FROM @DATA D
     WHERE D.DATAPOINTNUMBER IS NULL;
 
             INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'TABLE', 'M4', SYSDATETIME(), 'SKIP'
+    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'measurementrecord', 'M4', SYSDATETIME(), 'SKIP'
     FROM @DATA D
     WHERE D.CATEGORYID IS NULL;
 
             INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
         (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'TABLE', 'M5', SYSDATETIME(), 'SKIP'
+    SELECT D.MEASUREMENTRECORDID, 'NHRM', 'measurementrecord', 'M5', SYSDATETIME(), 'SKIP'
     FROM @DATA D
     WHERE D.[MEASUREMENTVALUE] IS NULL;
 
@@ -235,6 +226,7 @@ END;
 
 
 
+
 DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_MODIFY
 GO
 
@@ -245,9 +237,7 @@ BEGIN
 
     BEGIN TRY
 
-        -- IF @DATA IS NOT NULL
-
--- If value is greater than 5, then just insert 5 instead.
+    -- If value is greater than 5, then just insert 5 instead.
         INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
         (MEASUREMENTRECORDID,
         DWSOURCEBD,
@@ -261,8 +251,8 @@ BEGIN
         LOWERLIMIT)
     SELECT
         D.MEASUREMENTRECORDID,
-        'DWSOURCEBD',
-        'DWSOURCETABLE',
+        'NHRM',
+        'measurementrecord',
         D.MEASUREMENTID,
         D.DATAPOINTNUMBER,
         D.CATEGORYID,
@@ -271,15 +261,47 @@ BEGIN
         D.UPPERLIMIT,
         D.LOWERLIMIT
     FROM @DATA D
-    WHERE D.MEASUREMENTRECORDID IN (SELECT TOP 1 SOURCE_ID
-        FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
-        AND (SELECT TOP 1 FILTERID
-        FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
-        = 'M1'
+    WHERE D.MEASUREMENTRECORDID IN (SELECT SOURCE_ID FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+        AND 'M1' IN (SELECT FILTERID FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
 
-    -- DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    -- WHERE SOURCE_ID IN (SELECT D.MEASUREMENTRECORDID FROM @DATA D) 
-    --     AND FILTERID = 'M1'
+    DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    WHERE FILTERID = 'M1'
+    AND SOURCE_DATABASE = 'NHRM'
+    AND SOURCE_TABLE = 'measurementrecord'
+
+
+    -- If value is less than 1, then just insert 1 instead.
+        INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
+        (MEASUREMENTRECORDID,
+        DWSOURCEBD,
+        DWSOURCETABLE,
+        MEASUREMENTID,
+        DATAPOINTNUMBER,
+        CATEGORYID,
+        MEASUREMENTNAME,
+        MEASUREMENTVALUE,
+        UPPERLIMIT,
+        LOWERLIMIT)
+    SELECT
+        D.MEASUREMENTRECORDID,
+        'NHRM',
+        'measurementrecord',
+        D.MEASUREMENTID,
+        D.DATAPOINTNUMBER,
+        D.CATEGORYID,
+        D.MEASUREMENTNAME,
+        '1',
+        D.UPPERLIMIT,
+        D.LOWERLIMIT
+    FROM @DATA D
+    WHERE D.MEASUREMENTRECORDID IN (SELECT SOURCE_ID FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+        AND 'M2' IN (SELECT FILTERID FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+
+    DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    WHERE FILTERID = 'M2'
+    AND SOURCE_DATABASE = 'NHRM'
+    AND SOURCE_TABLE = 'measurementrecord'
+
 
     END TRY
 
@@ -293,12 +315,12 @@ BEGIN
 END
 
 
-
-
+EXEC ETL_PROCEDURE_DWMEASUREMENT;
 ----------------------------------------------------------------------------------------
 ----------------------- TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT -------------------------
 ----------------------------------------------------------------------------------------
--- Problem 5 insert the good data
+
+
 
 go
 USE NHDW_LDT_0214;
@@ -313,43 +335,80 @@ BEGIN
 
     BEGIN TRY
 
-        -- IF @DATA IS NOT NULL
+        INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
+            (MEASUREMENTRECORDID,
+            DWSOURCEBD,
+            DWSOURCETABLE,
+            MEASUREMENTID,
+            DATAPOINTNUMBER,
+            CATEGORYID,
+            MEASUREMENTNAME,
+            MEASUREMENTVALUE,
+            UPPERLIMIT,
+            LOWERLIMIT)
+        SELECT
+            D.MEASUREMENTRECORDID,
+            'NHRM',
+            'measurementrecord',
+            D.MEASUREMENTID,
+            D.DATAPOINTNUMBER,
+            D.CATEGORYID,
+            D.MEASUREMENTNAME,
+            D.MEASUREMENTVALUE,
+            D.UPPERLIMIT,
+            D.LOWERLIMIT
+        FROM @DATA D
+        WHERE D.MEASUREMENTRECORDID NOT IN (SELECT SOURCE_ID
+        FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+        AND D.MEASUREMENTRECORDID NOT IN (SELECT MEASUREMENTRECORDID 
+        FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT);
 
-    INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
-        (MEASUREMENTRECORDID,
-        DWSOURCEBD,
-        DWSOURCETABLE,
-        MEASUREMENTID,
-        DATAPOINTNUMBER,
-        CATEGORYID,
-        MEASUREMENTNAME,
-        MEASUREMENTVALUE,
-        UPPERLIMIT,
-        LOWERLIMIT)
-    SELECT
-        D.MEASUREMENTRECORDID,
-        'DWSOURCEBD',
-        'DWSOURCETABLE',
-        D.MEASUREMENTID,
-        D.DATAPOINTNUMBER,
-        D.CATEGORYID,
-        D.MEASUREMENTNAME,
-        D.MEASUREMENTVALUE,
-        D.UPPERLIMIT,
-        D.LOWERLIMIT
-    FROM @DATA D
-    WHERE D.MEASUREMENTRECORDID NOT IN (SELECT SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT);
     END TRY
 
     BEGIN CATCH
         BEGIN
-        DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
-        THROW 50000, @ERROR, 1
-    END
+            DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+            THROW 50000, @ERROR, 1
+        END
     END CATCH
 
 END;
+
+
+
+
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------    The below contains workings out for future reference     -----------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+----------------------------- General table lookups ----------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- SELECT NAME FROM SYS.DATABASES;
+
+-- SELECT * FROM INFORMATION_SCHEMA.TABLES;
+
+-- SELECT * FROM master.sys.sql_logins;
+
+-- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
+
+-- USE DDDM_TPS_1
+
+-- SELECT * FROM sys.objects
+
+-- SELECT * FROM datapoint
+
+-- USE NHDW_LDT_0214;
+
 
 
 

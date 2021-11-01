@@ -3,9 +3,504 @@
 -- 08/09/2021
 -- github repo https://github.com/LTaylor137/NHDW-DDL
 
+
+
+--------------------------------------------------------------------------------
+--------------------------- Tasks to complete ----------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- Problem 1 Piecing together our query to exclude data already in the DW and EE.
+-- Problem 2 Get the required data from the source.
+-- Problem 3 store data (in a non permanent way i.e memory) to pass between various ETL procedures
+
+------- the below are stored procedures that you pass the data to use as a parameter
+
+-- Problem 4 apply any filters to the data.
+-- Problem 5 insert the good data
+-- Problem 6 insert any data which the filter rules say needs to be transformed.
+
+-- do the above for Patient
+-- Measurement
+-- Datapoint
+
+
+
+-------------------------------------------------------------------------------------------
+---------------------------   table lookups for testing    --------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+
+
+--------------------------------------------------------------------------------
+-------------------------------- INSTRUCTIONS ----------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- This script should run from top to bottom, creating all procedures in order of reference needs
+-- at the end of this file the script will EXECUTE ETL_PROCEDURE_DWPATIENT, inserting appropriate data
+
+-- please run this ETL scripts for ETL-Script-DWPatient, ETL-Script-DWMeasurement, 
+-- and ETL-Script-DWDataPointRecord, then EXECUTE THE_ONE_QUERY in the file ETL-Script-CRON JOB
+
+
+
+--------------------------------------------------------------------------------
+---------------- DROP FUNCTIONS TO ALLOW RUN WHOLE SCRIPT AT ONCE --------------
+--------------------------------------------------------------------------------
+
+
+
+USE NHDW_LDT_0214;
+
+
+
+DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS;
+GO
+DROP PROCEDURE IF EXISTS RUN_PATIENT_MODIFY;
+GO
+DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_PATIENT;
+GO
+DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+GO
+DROP TYPE IF EXISTS TEMP_PATIENT_TABLE_TYPE;
+GO
+DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWPATIENT;
+GO
+DROP TYPE IF EXISTS INCORRECT_GENDER_URNUMBERS_TYPE;
+GO
+
+
+
+--------------------------------------------------------------------------------
+-------------------- CREATE GET CONNECTION STRING FUNCTION  --------------------
+--------------------------------------------------------------------------------
+
+
+
+-- CREATE GET CONNECTION STRING FUNCTION.
+USE NHDW_LDT_0214;
+
+-- DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+GO
+CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
+BEGIN
+    RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
+END;
+GO
+
+
+
+--------------------------------------------------------------------------------
+------------------------- Create a temporary table type ------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP TYPE IF EXISTS TEMP_PATIENT_TABLE_TYPE;
+GO
+
+CREATE TYPE TEMP_PATIENT_TABLE_TYPE AS TABLE (
+    URNUMBER NVARCHAR(10),
+    GENDER NVARCHAR(10),
+    DOB INT,
+    SUBURB NVARCHAR(MAX),
+    POSTCODE NVARCHAR(4),
+    COUNTRYOFBIRTH NVARCHAR(MAX),
+    LIVESALONE NVARCHAR(1),
+    ACTIVE NVARCHAR(1),
+    [DIAGNOSIS] NVARCHAR(MAX),
+    [CATEGORY] NVARCHAR(MAX),
+    [PROCEDURE] NVARCHAR(MAX)
+);
+
+
+
+-- craete table type to hold genders temporarily
+DROP TYPE IF EXISTS INCORRECT_GENDER_URNUMBERS_TYPE;
+GO
+
+CREATE TYPE INCORRECT_GENDER_URNUMBERS_TYPE AS TABLE (
+    URNUMBER NVARCHAR(10)
+);
+
+
+
+----------------------------------------------------------------------------------------
+----------------------------------- Apply Filters --------------------------------------
+---------------------- Problem 4 apply any filters to the data -------------------------
+----------------------------------------------------------------------------------------
+
+
+
+-- DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS
+GO
+
+CREATE PROCEDURE RUN_PATIENT_FILTERS
+    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
+AS
+BEGIN
+    BEGIN TRY
+
+            -- Gender != Male or FEMALE
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P1', SYSDATETIME(), 'MODIFY'
+    FROM @DATA D
+    WHERE D.GENDER NOT IN ('MALE', 'FEMALE');
+
+            -- DOB != 4
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P2', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE LEN(D.DOB) != 4;
+
+            -- POSTCODE != 4
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P3', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE LEN(D.POSTCODE) != 4;
+
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P4', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE D.DIAGNOSIS IS NULL;
+
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P5', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE D.CATEGORY IS NULL;
+
+            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
+        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
+    SELECT D.URNUMBER, 'NHRM', 'Patient', 'P6', SYSDATETIME(), 'SKIP'
+    FROM @DATA D
+    WHERE D.[PROCEDURE] IS NULL;
+
+    END TRY 
+
+    BEGIN CATCH
+        BEGIN
+        DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+        THROW 50000, @ERROR, 1
+    END
+    END CATCH
+
+END
+
+
+
+----------------------------------------------------------------------------------------------------
+---------------------------------------------- Modify ----------------------------------------------
+---------- Problem 6 insert any data which the filter rules say needs to be transformed ------------
+----------------------------------------------------------------------------------------------------
+
+
+
+-- -- Modify wrong genders.
+-- DROP PROCEDURE IF EXISTS RUN_PATIENT_MODIFY
+GO
+
+CREATE PROCEDURE RUN_PATIENT_MODIFY
+    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
+AS
+BEGIN
+
+    DECLARE @INCORRECT_GENDER_URNUMBERS AS INCORRECT_GENDER_URNUMBERS_TYPE
+    INSERT INTO @INCORRECT_GENDER_URNUMBERS
+    SELECT EE.SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT EE
+    WHERE EE.FILTERID = 'P1'
+        AND EE.[ACTION] = 'MODIFY'
+
+    -- SELECT 'wrong gender' AS WRONGGENDER, *
+    -- FROM @INCORRECT_GENDER_URNUMBERS;
+
+    INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
+        (
+        URNUMBER,
+        DWSOURCEDB,
+        DWSOURCETABLE,
+        GENDER,
+        DOB,
+        SUBURB,
+        POSTCODE,
+        COUNTRYOFBIRTH,
+        LIVESALONE,
+        ACTIVE,
+        CATEGORYNAME,
+        PROCEDUREDATE,
+        DIAGNOSIS)
+    SELECT
+        D.URNUMBER,
+        'NRHM',
+        'Patient',
+        (SELECT GS.NEW_VALUE
+        FROM NHDW_LDT_0214.DBO.GENDERSPELLING GS
+        WHERE D.GENDER = GS.INVALID_VALUE),
+        D.DOB,
+        D.SUBURB,
+        D.POSTCODE,
+        D.COUNTRYOFBIRTH,
+        D.LIVESALONE,
+        D.ACTIVE,
+        D.CATEGORY,
+        D.[PROCEDURE],
+        DIAGNOSIS
+    FROM @DATA D
+    WHERE D.URNUMBER IN (SELECT URNUMBER
+    FROM @INCORRECT_GENDER_URNUMBERS);
+
+    -- SELECT 'EE State A', *
+    -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+    DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    WHERE SOURCE_ID IN (SELECT URNUMBER
+    FROM @INCORRECT_GENDER_URNUMBERS);
+
+    -- SELECT 'EE State B', *
+    -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+END
+
+
+
+----------------------------------------------------------------------------------------
+------------------------ Transfer good data into DW PATIENT ----------------------------
+-------------------------- Problem 5 insert the good data ------------------------------
+----------------------------------------------------------------------------------------
+
+
+
+-- DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_PATIENT
+GO
+
+CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_PATIENT
+    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
+AS
+
+BEGIN
+
+    BEGIN TRY
+
+        INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
+            (
+            URNUMBER,
+            DWSOURCEDB,
+            DWSOURCETABLE,
+            GENDER,
+            DOB,
+            SUBURB,
+            POSTCODE,
+            COUNTRYOFBIRTH,
+            LIVESALONE,
+            ACTIVE,
+            CATEGORYNAME,
+            PROCEDUREDATE,
+            DIAGNOSIS)
+        SELECT
+            D.URNUMBER,
+            'NRHM',
+            'Patient',
+            D.GENDER,
+            D.DOB,
+            D.SUBURB,
+            D.POSTCODE,
+            D.COUNTRYOFBIRTH,
+            D.LIVESALONE,
+            D.ACTIVE,
+            D.CATEGORY,
+            D.[PROCEDURE],
+            D.DIAGNOSIS
+        FROM @DATA D
+        WHERE D.URNUMBER NOT IN (SELECT SOURCE_ID
+        FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
+        AND D.URNUMBER NOT IN (SELECT URNUMBER 
+        FROM NHDW_LDT_0214.DBO.DW_PATIENT);
+
+    END TRY
+
+    BEGIN CATCH
+        BEGIN
+            DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+            THROW 50000, @ERROR, 1
+        END
+    END CATCH
+
+END;
+
+
+
+--------------------------------------------------------------------------------
+------------------------------ Transfer Procedure ------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWPATIENT
+GO
+
+CREATE PROCEDURE ETL_PROCEDURE_DWPATIENT
+AS
+BEGIN
+
+    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
+    FROM NHDW_LDT_0214.DBO.DW_PATIENT
+    IF (@ALREADY_IN_DIM IS NULL)
+        SET @ALREADY_IN_DIM = '0'
+
+    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    IF (@IN_ERROR_EVENT IS NULL)
+        SET @IN_ERROR_EVENT = '0'
+
+    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
+
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    DECLARE @SELECTQUERY NVARCHAR(MAX);
+    SET @SELECTQUERY = '''SELECT URNUMBER, GENDER, YEAR(DOB) AS DOB,' +
+                    'SUBURB, POSTCODE, COUNTRYOFBIRTH, LIVESALONE, ACTIVE, ' +
+                    '(SELECT TOP 1 DIAGNOSIS FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [DIAGNOSIS],' +
+
+                    '(SELECT TOP 1 CATEGORYNAME FROM DDDM_TPS_1.DBO.PATIENTCATEGORY PC' +
+                    ' INNER JOIN DDDM_TPS_1.DBO.TEMPLATECATEGORY TC' +
+                    ' ON PC.CATEGORYID = TC.CATEGORYID' +
+                    ' WHERE PC.URNUMBER = P.URNUMBER) AS [CATEGORY], ' +
+
+                    '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
+                    ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
+
+    DECLARE @COMMAND_P NVARCHAR(MAX);
+    SET @COMMAND_P = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
+    PRINT('---- this is the command:   ' + @COMMAND_P);
+
+    DECLARE @TEMPPATIENTTABLE AS TEMP_PATIENT_TABLE_TYPE;
+
+    -- SELECT 'PTT State A', *
+    -- FROM @TEMPPATIENTTABLE;
+
+    INSERT INTO @TEMPPATIENTTABLE
+    EXECUTE(@COMMAND_P);
+
+    -- -- inserting test data to spoof gender filters.
+    -- INSERT INTO @TEMPPATIENTTABLE
+    -- VALUES
+    --     ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+    --     ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
+    --     ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
+
+    -- SELECT 'PTT State B', *
+    -- FROM @TEMPPATIENTTABLE;
+
+    EXEC RUN_PATIENT_FILTERS @DATA = @TEMPPATIENTTABLE;
+
+    EXEC RUN_PATIENT_MODIFY @DATA = @TEMPPATIENTTABLE;
+
+    EXEC TRANSFER_GOOD_DATA_INTO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
+
+END;
+
+
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+GO
+EXEC ETL_PROCEDURE_DWPATIENT;
+
+
+
+
+-------------------------------------------------------------------------------------------
+---------------------------   table lookups for testing    --------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------    The below contains workings out for future reference     -----------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 ----------------------------- General table lookups ----------------------------
 --------------------------------------------------------------------------------
+
+
+
+
+-----------------------------------------------------------------------------------------------------------
+------------------------------------------ insert test data -----------------------------------------------
+-----------------------------------------------------------------------------------------------------------
+
+
+
+-- USE NHDW_LDT_0214;
+
+-- INSERT INTO ERROR_EVENT
+-- VALUES
+--     (900000005, 'NHRM', 'TABLE', 1, GETDATE(), 'SKIP'),
+--     (900000010, 'NHRM', 'TABLE', 1, GETDATE(), 'SKIP')
+
+-- INSERT INTO DW_PATIENT
+-- VALUES
+--     (900000015, 'NHRM', 'TABLE', 'MALE', 1980, 'Suburb', '3000', 'Australia', '0', '1', 'IPC', '12-12-2020', 'Bad'),
+--     (900000020, 'NHRM', 'TABLE', 'FEMALE', 1980, 'Suburb', '3000', 'Australia', '0', '1', 'IPC', '12-12-2020', 'Bad')
+
+-- go;
+
+
+
+
+
+
 
 -- SELECT NAME FROM SYS.DATABASES;
 
@@ -19,14 +514,14 @@
 
 -- SELECT * FROM sys.objects
 
-SELECT *
-FROM measurementrecord
-SELECT *
-FROM patientmeasurement
-SELECT *
-FROM datapointrecord
-SELECT *
-FROM measurement
+-- SELECT *
+-- FROM measurementrecord
+-- SELECT *
+-- FROM patientmeasurement
+-- SELECT *
+-- FROM datapointrecord
+-- SELECT *
+-- FROM measurement
 
 --------------------------------------------------------------------------------
 -------------------------------- DataWarehouse ---------------------------------
@@ -93,83 +588,6 @@ FROM measurement
 
 -- note sp_addrolemember is a "stored proceedure"
 
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------- Tasks to complete ----------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
-
-
-
-
--- Problem 1 Piecing together our query to exclude data already in the DW and EE.
--- Problem 2 Get the required data from the source.
--- Problem 3 store data (in a non permanent way i.e memory) to pass between various ETL procedures
-
-------- the below are stored procedures that you pass the data to use as a parameter
-
--- Problem 4 apply any filters to the data.
--- Problem 5 insert the good data
--- Problem 6 insert any data which the filter rules say needs to be transformed.
-
--- do the above for Patient
--- Measurement
--- Datapoint
-
--- combine into a datacube also containing date?
-
-
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------- Tasks to complete ----------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
-
-
-
-
------------------------------------------------------------------------------------------------------------
------------------------------------------------------------------------------------------------------------
------------------------------------------- insert test data -----------------------------------------------
------------------------------------------------------------------------------------------------------------
------------------------------------------------------------------------------------------------------------
-
--- SEE 42:50 MINS
-
-USE NHDW_LDT_0214;
-
-INSERT INTO ERROR_EVENT
-VALUES
-    (
-        900000005, 'NHRM', 'TABLE', 1, GETDATE(), 'SKIP'
-),
-    (
-        900000010, 'NHRM', 'TABLE', 1, GETDATE(), 'SKIP'
-)
-
-INSERT INTO DW_PATIENT
-VALUES
-    (
-        900000015, 'NHRM', 'TABLE', 'MALE', 1980, 'Suburb', '3000', 'Australia', '0', '1', 'IPC', '12-12-2020', 'Bad'
-),
-    (
-        900000020, 'NHRM', 'TABLE', 'FEMALE', 1980, 'Suburb', '3000', 'Australia', '0', '1', 'IPC', '12-12-2020', 'Bad'
-)
-
-SELECT *
-FROM ERROR_EVENT
-
-SELECT *
-FROM DW_PATIENT
-
-go;
-
-
 
 ------------------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------
@@ -222,387 +640,6 @@ go;
 -- END;
 
 -- EXEC GET_IDS_TO_EXCLUDE;
-
-
-
-------------------------------------------------------------------------------------------------------------------------
---------------------------------- Problem 2 Get the required data from the source. -------------------------------------
-------------------------------------------------------------------------------------------------------------------------
-
-
-GO
-
--- CREATE GET CONNECTION STRING FUNCTION.
-USE NHDW_LDT_0214;
-
-DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
-GO
-CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
-BEGIN
-    RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
-END;
-GO
-
-
------------------------------------------------------------------------------------------------------------------------------
-------------- Problem 3 store data (in a non permanent way i.e memory) to pass between various ETL procedures ---------------
------------------------------------------------------------------------------------------------------------------------------
-
-
---- Create a temporary table type ---
-
-
-
-DROP TYPE IF EXISTS TEMP_PATIENT_TABLE_TYPE;
-GO
-CREATE TYPE TEMP_PATIENT_TABLE_TYPE AS TABLE (
-    URNUMBER NVARCHAR(10),
-    GENDER NVARCHAR(10),
-    DOB INT,
-    SUBURB NVARCHAR(MAX),
-    POSTCODE NVARCHAR(4),
-    COUNTRYOFBIRTH NVARCHAR(MAX),
-    LIVESALONE NVARCHAR(1),
-    ACTIVE NVARCHAR(1),
-    [DIAGNOSIS] NVARCHAR(MAX),
-    [CATEGORY] NVARCHAR(MAX),
-    [PROCEDURE] NVARCHAR(MAX)
-);
-
-
-
---- pull data from DDDM_TPS_1.DBO.PATIENT and insert it into a temptable.  ---
-
-DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWPATIENT
-GO
-CREATE PROCEDURE ETL_PROCEDURE_DWPATIENT
-AS
-BEGIN
-
-    -- get a string of id's already in EE and DW tables.
-    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
-    FROM NHDW_LDT_0214.DBO.DW_PATIENT
-    -- WHERE DWSOURCEDB = 'NHRM';
-    IF (@ALREADY_IN_DIM IS NULL)
-        SET @ALREADY_IN_DIM = '0'
-
-    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
-    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    -- WHERE DWSOURCEDB = 'NHRM';
-    IF (@IN_ERROR_EVENT IS NULL)
-        SET @IN_ERROR_EVENT = '0'
-
-    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
-    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
-    PRINT @TO_EXCLUDE;
-
-    -- get connection string
-    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
-    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
-
-    -- write the code to get the required data - excludes those identified above.
-    DECLARE @SELECTQUERY NVARCHAR(MAX);
-    SET @SELECTQUERY = '''SELECT URNUMBER, GENDER, YEAR(DOB) AS DOB,' +
-                    'SUBURB, POSTCODE, COUNTRYOFBIRTH, LIVESALONE, ACTIVE, ' +
-                    '(SELECT TOP 1 DIAGNOSIS FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [DIAGNOSIS],' +
-
-                    '(SELECT TOP 1 CATEGORYNAME FROM DDDM_TPS_1.DBO.PATIENTCATEGORY PC' +
-                    ' INNER JOIN DDDM_TPS_1.DBO.TEMPLATECATEGORY TC' +
-                    ' ON PC.CATEGORYID = TC.CATEGORYID' +
-                    ' WHERE PC.URNUMBER = P.URNUMBER) AS [CATEGORY], ' +
-
-                    '(SELECT TOP 1 PROCEDUREDATE FROM DDDM_TPS_1.DBO.CONDITIONDETAILS CD WHERE CD.URNUMBER = P.URNUMBER) AS [PROCEDURE]' +
-                    ' FROM DDDM_TPS_1.DBO.PATIENT P WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
-
-    DECLARE @COMMAND_P NVARCHAR(MAX);
-    SET @COMMAND_P = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
-    PRINT('---- this is the command:   ' + @COMMAND_P);
-
-    DECLARE @TEMPPATIENTTABLE AS TEMP_PATIENT_TABLE_TYPE;
-
-    SELECT 'TT A', *
-    FROM @TEMPPATIENTTABLE;
-
-    INSERT INTO @TEMPPATIENTTABLE
-    EXECUTE(@COMMAND_P);
-
-    -- -- inserting test data to spoof gender filters.
-    -- INSERT INTO @TEMPPATIENTTABLE
-    -- VALUES
-    --     ('123450001', 'Fem', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('123450002', 'F', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM'),
-    --     ('123450003', 'Mail', 1932, 'Springfield', 1234, 'Australia', 0, 1, 'xxx', 'Indwelling Pleural Catheter', 'Oct 13 2020 12:00AM')
-
-    SELECT 'TT B', *
-    FROM @TEMPPATIENTTABLE;
-
-    EXEC RUN_PATIENT_FILTERS @DATA = @TEMPPATIENTTABLE;
-
-    EXEC RUN_PATIENT_MODIFY @DATA = @TEMPPATIENTTABLE;
-
-    EXEC TRANSFER_GOOD_DATA_INTO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
-
-END;
-
-
-
-
-
--------------------------------------------------------------------------------------------
-------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
--------------------------------------------------------------------------------------------
-
-EXEC ETL_PROCEDURE_DWPATIENT;
-
--------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------
-
-
-
-
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_PATIENT
-
--- SELECT *
--- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
-
-
-
-----------------------------------------------------------------------------------------
------------------------------------ Apply Filters --------------------------------------
-----------------------------------------------------------------------------------------
--- Problem 4 apply any filters to the data.
-
-
-
-DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS
-GO
-
-CREATE PROCEDURE RUN_PATIENT_FILTERS
-    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
-AS
-BEGIN
-    BEGIN TRY
-
-            -- Gender != Male or FEMALE
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P1', SYSDATETIME(), 'MODIFY'
-    FROM @DATA D
-    WHERE D.GENDER NOT IN ('MALE', 'FEMALE');
-
-            -- DOB != 4
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P2', SYSDATETIME(), 'SKIP'
-    FROM @DATA D
-    WHERE LEN(D.DOB) != 4;
-
-            -- POSTCODE != 4
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P3', SYSDATETIME(), 'SKIP'
-    FROM @DATA D
-    WHERE LEN(D.POSTCODE) != 4;
-
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P4', SYSDATETIME(), 'SKIP'
-    FROM @DATA D
-    WHERE D.DIAGNOSIS IS NULL;
-
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P5', SYSDATETIME(), 'SKIP'
-    FROM @DATA D
-    WHERE D.CATEGORY IS NULL;
-
-            INSERT INTO NHDW_LDT_0214.DBO.ERROR_EVENT
-        (SOURCE_ID, SOURCE_DATABASE, SOURCE_TABLE, FILTERID, [DATETIME], [ACTION])
-    SELECT D.URNUMBER, 'NHRM', 'TABLE', 'P6', SYSDATETIME(), 'SKIP'
-    FROM @DATA D
-    WHERE D.[PROCEDURE] IS NULL;
-
-    END TRY 
-
-    BEGIN CATCH
-        BEGIN
-        DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
-        THROW 50000, @ERROR, 1
-    END
-    END CATCH
-
-END
-
-
------------------------
-
-
-DROP SEQUENCE IF EXISTS SEQ_DWPATIENTID;
-GO
-CREATE SEQUENCE SEQ_DWPATIENTID
-    -- AS INT
-    START WITH 1
-    INCREMENT BY 1;
-GO
-
-----------------------------------------------------------------------------------------------------
----------------------------------------------- Modify ----------------------------------------------
-----------------------------------------------------------------------------------------------------
--- Problem 6 insert any data which the filter rules say needs to be transformed.
-
-DROP TYPE IF EXISTS INCORRECT_GENDER_URNUMBERS_TYPE;
-GO
-CREATE TYPE INCORRECT_GENDER_URNUMBERS_TYPE AS TABLE (
-    URNUMBER NVARCHAR(10)
-);
-
-
-DROP PROCEDURE IF EXISTS RUN_PATIENT_MODIFY
-GO
-
-CREATE PROCEDURE RUN_PATIENT_MODIFY
-    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
-AS
-BEGIN
-
-    DECLARE @INCORRECT_GENDER_URNUMBERS AS INCORRECT_GENDER_URNUMBERS_TYPE
-    INSERT INTO @INCORRECT_GENDER_URNUMBERS
-    SELECT EE.SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT EE
-    WHERE EE.FILTERID = 'P1'
-        AND EE.[ACTION] = 'MODIFY'
-
-    SELECT 'wrong gender' AS WRONGGENDER, *
-    FROM @INCORRECT_GENDER_URNUMBERS;
-
-    INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
-        (
-        URNUMBER,
-        DWSOURCEDB,
-        DWSOURCETABLE,
-        GENDER,
-        DOB,
-        SUBURB,
-        POSTCODE,
-        COUNTRYOFBIRTH,
-        LIVESALONE,
-        ACTIVE,
-        CATEGORYNAME,
-        PROCEDUREDATE,
-        DIAGNOSIS)
-    SELECT
-        D.URNUMBER,
-        'NRHM',
-        'Patient',
-        (SELECT GS.NEW_VALUE
-        FROM NHDW_LDT_0214.DBO.GENDERSPELLING GS
-        WHERE D.GENDER = GS.INVALID_VALUE),
-        D.DOB,
-        D.SUBURB,
-        D.POSTCODE,
-        D.COUNTRYOFBIRTH,
-        D.LIVESALONE,
-        D.ACTIVE,
-        D.CATEGORY,
-        D.[PROCEDURE],
-        DIAGNOSIS
-    FROM @DATA D
-    WHERE D.URNUMBER IN (SELECT URNUMBER
-    FROM @INCORRECT_GENDER_URNUMBERS);
-
-SELECT 'hg', *
-FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-    DELETE FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    WHERE SOURCE_ID IN (SELECT URNUMBER
-    FROM @INCORRECT_GENDER_URNUMBERS);
-
-    SELECT 'm', *
-FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-END
-
-
-----------------------------------------------------------------------------------------
------------------------- Transfer good data into DW PATIENT ----------------------------
-----------------------------------------------------------------------------------------
--- Problem 5 insert the good data
-
--- The idea is to transfer any remaining data to the patient table, 
--- after it has been modified, or removed.
-
-
-go
-USE NHDW_LDT_0214;
-
-DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_PATIENT
-GO
-CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_PATIENT
-    @DATA TEMP_PATIENT_TABLE_TYPE READONLY
-AS
-
-BEGIN
-
-    -- BEGIN TRY
-
-    -- IF @DATA IS NOT NULL
-
-    INSERT INTO NHDW_LDT_0214.DBO.DW_PATIENT
-        (
-        URNUMBER,
-        DWSOURCEDB,
-        DWSOURCETABLE,
-        GENDER,
-        DOB,
-        SUBURB,
-        POSTCODE,
-        COUNTRYOFBIRTH,
-        LIVESALONE,
-        ACTIVE,
-        CATEGORYNAME,
-        PROCEDUREDATE,
-        DIAGNOSIS)
-    SELECT
-        D.URNUMBER,
-        'NRHM',
-        'Patient',
-        D.GENDER,
-        D.DOB,
-        D.SUBURB,
-        D.POSTCODE,
-        D.COUNTRYOFBIRTH,
-        D.LIVESALONE,
-        D.ACTIVE,
-        D.CATEGORY,
-        D.[PROCEDURE],
-        D.DIAGNOSIS
-    FROM @DATA D
-    WHERE D.URNUMBER NOT IN (SELECT SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT)
-    AND D.URNUMBER NOT IN (SELECT URNUMBER 
-    FROM NHDW_LDT_0214.DBO.DW_PATIENT);
--- END TRY
-
--- BEGIN CATCH
---     BEGIN
---     DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
---     THROW 50000, @ERROR, 1
--- END
--- END CATCH
-
-END;
-
-
-
-
 
 
 
@@ -736,7 +773,6 @@ END;
 
 -- -- EXECUTE AFTER INITIALISING PROCEDURES
 -- EXEC VAR_SELECT_TEST;
-
 
 
 
@@ -892,7 +928,6 @@ END;
 
 -- SELECT *
 -- FROM @TEMPTABLEVAR;
-
 
 
 -- BEGIN
