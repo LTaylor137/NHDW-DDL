@@ -352,7 +352,7 @@ END;
 
 
 --------------------------------------------------------------------------------
------------------------------- Transfer Procedure ------------------------------
+------------------------------ Select Procedure ------------------------------
 --------------------------------------------------------------------------------
 
 
@@ -363,6 +363,8 @@ GO
 CREATE PROCEDURE ETL_PROCEDURE_DWPATIENT
 AS
 BEGIN
+
+    PRINT '--- ETL_PROCEDURE_DWPATIENT has begun ---'
 
     DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
     SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + URNUMBER
@@ -398,7 +400,7 @@ BEGIN
 
     DECLARE @COMMAND_P NVARCHAR(MAX);
     SET @COMMAND_P = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY + ');'
-    PRINT('---- this is the command:   ' + @COMMAND_P);
+    PRINT('--- This is the command string: ' + @COMMAND_P);
 
     DECLARE @TEMPPATIENTTABLE AS TEMP_PATIENT_TABLE_TYPE;
 
@@ -423,6 +425,8 @@ BEGIN
     EXEC RUN_PATIENT_MODIFY @DATA = @TEMPPATIENTTABLE;
 
     EXEC TRANSFER_GOOD_DATA_INTO_DW_PATIENT @DATA = @TEMPPATIENTTABLE
+
+    PRINT '--- ETL_PROCEDURE_DWPATIENT has finished ---'
 
 END;
 
@@ -476,9 +480,10 @@ EXEC ETL_PROCEDURE_DWPATIENT;
 
 
 
------------------------------------------------------------------------------------------------------------
------------------------------------------- insert test data -----------------------------------------------
------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+------------------------------------ insert test data -------------------------------------
+-------------------------------------------------------------------------------------------
+
 
 
 

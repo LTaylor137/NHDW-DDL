@@ -3,152 +3,6 @@
 -- 08/09/2021
 -- github repo https://github.com/LTaylor137/NHDW-DDL
 
---------------------------------------------------------------------------------
------------------------------ General table lookups ----------------------------
---------------------------------------------------------------------------------
-
-
-
--- SELECT NAME FROM SYS.DATABASES;
-
--- SELECT * FROM INFORMATION_SCHEMA.TABLES;
-
--- SELECT * FROM master.sys.sql_logins;
-
--- SELECT * FROM [DDDM_TPS_1].sys.sql_logins;
-
--- USE DDDM_TPS_1
-
--- SELECT * FROM sys.objects
-
-
-
---------------------------------------------------------------------------------
--------------------- CREATE GET CONNECTION STRING FUNCTION  --------------------
---------------------------------------------------------------------------------
-
-
-
-USE NHDW_LDT_0214;
-
-DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
-GO
-
-CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
-BEGIN
-    RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
-END;
-GO
-
-
-
---------------------------------------------------------------------------------
-------------------------- Create a temporary table type ------------------------
---------------------------------------------------------------------------------
-
-
-
-DROP TYPE IF EXISTS TEMP_DATAPOINTRECORD_TABLE_TYPE;
-GO
-
-CREATE TYPE TEMP_DATAPOINTRECORD_TABLE_TYPE AS TABLE (
-    SRC_URNUMBER NVARCHAR(50) NOT NULL,
-    SRC_MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
-    SRC_DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
-    DWDATEKEY NVARCHAR(50) NOT NULL,
-    SRC_VALUE FLOAT(10) NOT NULL,
-    FREQUENCYDATEKEY INTEGER NOT NULL,
-    FREQUENCY INTEGER NOT NULL
-);
-
-
-
---------------------------------------------------------------------------------
------------------------------- Transfer Procedure ------------------------------
---------------------------------------------------------------------------------
-
-
-
-DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWDATAPOINTRECORD
-GO
-
-CREATE PROCEDURE ETL_PROCEDURE_DWDATAPOINTRECORD
-AS
-BEGIN
-   
-    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + '''' + DPRCONCATPK + ''''
-    FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
-    -- PRINT @ALREADY_IN_DIM;
-
-    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
-    SELECT @IN_ERROR_EVENT = COALESCE('' + @IN_ERROR_EVENT + ',', '' + '') + '''' + SOURCE_ID + ''''
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    WHERE LEN(SOURCE_ID) > 10;
-    -- PRINT @IN_ERROR_EVENT;
-
-    IF (@ALREADY_IN_DIM IS NULL)
-        SET @ALREADY_IN_DIM = '''0'''
-
-    IF (@IN_ERROR_EVENT IS NULL)
-        SET @IN_ERROR_EVENT = '''0'''
-
-    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
-    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
-    -- PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
-
-    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
-    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
-
-    DECLARE @SELECTQUERY03 NVARCHAR(MAX);
-    SET @SELECTQUERY03 = 
-        '''SELECT MR.URNumber, MR.MeasurementRecordID, DPR.Datapointnumber,' +
-        'CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY, ' +
-        'DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency ' +
-        'FROM DDDM_TPS_1.dbo.measurementrecord MR ' +
-        'INNER JOIN DDDM_TPS_1.DBO.PATIENT P ' +
-        'ON MR.URNumber = P.URNUMBER ' +
-        'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' +
-        'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' +
-        'INNER JOIN DDDM_TPS_1.dbo.patientmeasurement PM ' +
-        'ON MR.URNumber = PM.URNUMBER''';
-
-    DECLARE @COMMAND_DPR NVARCHAR(MAX);
-
-    IF @TO_EXCLUDE IS NULL
-        BEGIN
-            SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ') SOURCE;'
-        END
-    ELSE
-        BEGIN
-              SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ') SOURCE ' +
-                                 'WHERE CONCAT(SOURCE.URNumber, ''-'', SOURCE.MeasurementRecordID, ''-'', CONVERT(CHAR(8), SOURCE.DWDATETIMEKEY, 112)) NOT IN (' + @TO_EXCLUDE + ');'
-        END
-    -- PRINT('---- this is the command ----  ' + @COMMAND_DPR);
-
-    DECLARE @TEMPDATAPOINTRECORDTABLE AS TEMP_DATAPOINTRECORD_TABLE_TYPE;
-    -- SELECT 'TT state A' AS A, * FROM @TEMPDATAPOINTRECORDTABLE;
-
-    INSERT INTO @TEMPDATAPOINTRECORDTABLE
-    EXECUTE(@COMMAND_DPR);
-    -- SELECT 'TT state B' AS B, * FROM @TEMPDATAPOINTRECORDTABLE;
-
-    EXEC RUN_PATIENT_FILTERS @DATA = @TEMPDATAPOINTRECORDTABLE;
-
-    EXEC TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD @DATA = @TEMPDATAPOINTRECORDTABLE;
-
-END;
-
-
-
--------------------------------------------------------------------------------------------
-------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
--------------------------------------------------------------------------------------------
-
-
-
-EXEC ETL_PROCEDURE_DWDATAPOINTRECORD;
-
 
 
 -------------------------------------------------------------------------------------------
@@ -169,8 +23,82 @@ EXEC ETL_PROCEDURE_DWDATAPOINTRECORD;
 -- SELECT *
 -- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
 
--- DELETE FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD 
--- WHERE DPRCONCATPK = '900000335-1-1-20200110'
+
+
+--------------------------------------------------------------------------------
+-------------------------------- INSTRUCTIONS ----------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- This script should run from top to bottom, creating all procedures in order of reference needs
+-- at the end of this file the script will EXECUTE ETL_PROCEDURE_DWPATIENT, inserting appropriate data
+
+-- please run this ETL scripts for ETL-Script-DWPatient, ETL-Script-DWMeasurement, 
+-- and ETL-Script-DWDataPointRecord, then EXECUTE THE_ONE_QUERY in the file ETL-Script-CRON JOB
+
+
+
+--------------------------------------------------------------------------------
+---------------- DROP FUNCTIONS TO ALLOW RUN WHOLE SCRIPT AT ONCE --------------
+--------------------------------------------------------------------------------
+
+
+
+USE NHDW_LDT_0214;
+
+
+
+DROP PROCEDURE IF EXISTS RUN_DATAPOINTRECORD_FILTERS;
+GO
+-- DROP PROCEDURE IF EXISTS RUN_DATAPOINTRECORD_MODIFY;
+-- GO
+DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD
+GO
+DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+GO
+DROP TYPE IF EXISTS TEMP_DATAPOINTRECORD_TABLE_TYPE;
+GO
+DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWDATAPOINTRECORD;
+GO
+
+
+
+--------------------------------------------------------------------------------
+-------------------- CREATE GET CONNECTION STRING FUNCTION  --------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+
+GO
+CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
+BEGIN
+    RETURN 'Server=db.cgau35jk6tdb.us-east-1.rds.amazonaws.com;UID=ldtreadonly;PWD=Kitemud$41;';
+END;
+GO
+
+
+
+--------------------------------------------------------------------------------
+------------------------- Create a temporary table type ------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP TYPE IF EXISTS TEMP_DATAPOINTRECORD_TABLE_TYPE;
+
+GO
+CREATE TYPE TEMP_DATAPOINTRECORD_TABLE_TYPE AS TABLE (
+    SRC_URNUMBER NVARCHAR(50) NOT NULL,
+    SRC_MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
+    SRC_DATAPOINTNUMBER NVARCHAR(50) NOT NULL,
+    DWDATEKEY NVARCHAR(50) NOT NULL,
+    SRC_VALUE FLOAT(10) NOT NULL,
+    FREQUENCYDATEKEY INTEGER NOT NULL,
+    FREQUENCY INTEGER NOT NULL
+);
 
 
 
@@ -180,10 +108,10 @@ EXEC ETL_PROCEDURE_DWDATAPOINTRECORD;
 
 
 
-DROP PROCEDURE IF EXISTS RUN_PATIENT_FILTERS
-GO
+-- DROP PROCEDURE IF EXISTS RUN_DATAPOINTRECORD_FILTERS
 
-CREATE PROCEDURE RUN_PATIENT_FILTERS
+GO
+CREATE PROCEDURE RUN_DATAPOINTRECORD_FILTERS
     @DATA TEMP_DATAPOINTRECORD_TABLE_TYPE READONLY
 AS
 BEGIN
@@ -236,9 +164,9 @@ END
 
 
 
-DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD
-GO
+-- DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD
 
+GO
 CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD
     @DATA TEMP_DATAPOINTRECORD_TABLE_TYPE READONLY
 AS
@@ -290,6 +218,120 @@ END;
 
 
 
+--------------------------------------------------------------------------------
+------------------------------ Select Procedure ------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWDATAPOINTRECORD
+
+GO
+CREATE PROCEDURE ETL_PROCEDURE_DWDATAPOINTRECORD
+AS
+BEGIN
+   
+    PRINT '--- ETL_PROCEDURE_DWDATAPOINTRECORD has begun ---'
+
+    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + '''' + DPRCONCATPK + ''''
+    FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+    -- PRINT @ALREADY_IN_DIM;
+
+    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    SELECT @IN_ERROR_EVENT = COALESCE('' + @IN_ERROR_EVENT + ',', '' + '') + '''' + SOURCE_ID + ''''
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    WHERE LEN(SOURCE_ID) > 10;
+    -- PRINT @IN_ERROR_EVENT;
+
+    IF (@ALREADY_IN_DIM IS NULL)
+        SET @ALREADY_IN_DIM = '''0'''
+
+    IF (@IN_ERROR_EVENT IS NULL)
+        SET @IN_ERROR_EVENT = '''0'''
+
+    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    -- PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
+
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    DECLARE @SELECTQUERY03 NVARCHAR(MAX);
+    SET @SELECTQUERY03 = 
+        '''SELECT MR.URNumber, MR.MeasurementRecordID, DPR.Datapointnumber,' +
+        'CONVERT(CHAR(8), MR.DateTimeRecorded, 112) AS DWDATETIMEKEY, ' +
+        'DPR.[VALUE], CONVERT(CHAR(8), PM.FrequencySetDate, 112) AS FREQUENCYSETDATE, Frequency ' +
+        'FROM DDDM_TPS_1.dbo.measurementrecord MR ' +
+        'INNER JOIN DDDM_TPS_1.DBO.PATIENT P ' +
+        'ON MR.URNumber = P.URNUMBER ' +
+        'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' +
+        'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' +
+        'INNER JOIN DDDM_TPS_1.dbo.patientmeasurement PM ' +
+        'ON MR.URNumber = PM.URNUMBER''';
+
+    DECLARE @COMMAND_DPR NVARCHAR(MAX);
+
+    IF @TO_EXCLUDE IS NULL
+        BEGIN
+            SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ') SOURCE;'
+        END
+    ELSE
+        BEGIN
+              SET @COMMAND_DPR = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY03 + ') SOURCE ' +
+                                 'WHERE CONCAT(SOURCE.URNumber, ''-'', SOURCE.MeasurementRecordID, ''-'', CONVERT(CHAR(8), SOURCE.DWDATETIMEKEY, 112)) NOT IN (' + @TO_EXCLUDE + ');'
+        END
+    PRINT('--- This is the command string: ' + @COMMAND_DPR);
+
+
+    DECLARE @TEMPDATAPOINTRECORDTABLE AS TEMP_DATAPOINTRECORD_TABLE_TYPE;
+    -- SELECT 'TT state A' AS A, * FROM @TEMPDATAPOINTRECORDTABLE;
+
+    INSERT INTO @TEMPDATAPOINTRECORDTABLE
+    EXECUTE(@COMMAND_DPR);
+    -- SELECT 'TT state B' AS B, * FROM @TEMPDATAPOINTRECORDTABLE;
+
+    EXEC RUN_DATAPOINTRECORD_FILTERS @DATA = @TEMPDATAPOINTRECORDTABLE;
+
+    EXEC TRANSFER_GOOD_DATA_INTO_DW_DATAPOINTRECORD @DATA = @TEMPDATAPOINTRECORDTABLE;
+
+    PRINT '--- ETL_PROCEDURE_DWDATAPOINTRECORD has finished ---'
+
+END;
+
+
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWDATAPOINTRECORD -------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+GO
+EXEC ETL_PROCEDURE_DWDATAPOINTRECORD;
+
+
+
+-------------------------------------------------------------------------------------------
+---------------------------   table lookups for testing    --------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+-- DELETE FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD 
+-- WHERE DPRCONCATPK = '900000335-1-1-20200110'
 
 
 

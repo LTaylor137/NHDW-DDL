@@ -5,14 +5,73 @@
 
 
 
+-------------------------------------------------------------------------------------------
+---------------------------   table lookups for testing    --------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+
+
+
+--------------------------------------------------------------------------------
+-------------------------------- INSTRUCTIONS ----------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- This script should run from top to bottom, creating all procedures in order of reference needs
+-- at the end of this file the script will EXECUTE ETL_PROCEDURE_DWPATIENT, inserting appropriate data
+
+-- please run this ETL scripts for ETL-Script-DWPatient, ETL-Script-DWMeasurement, 
+-- and ETL-Script-DWDataPointRecord, then EXECUTE THE_ONE_QUERY in the file ETL-Script-CRON JOB
+
+
+
+--------------------------------------------------------------------------------
+---------------- DROP FUNCTIONS TO ALLOW RUN WHOLE SCRIPT AT ONCE --------------
+--------------------------------------------------------------------------------
+
+
+
+USE NHDW_LDT_0214;
+
+
+
+DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_FILTERS;
+GO
+DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_MODIFY;
+GO
+DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
+GO
+DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+GO
+DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
+GO
+DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWMEASUREMENT;
+GO
+
+
+
 --------------------------------------------------------------------------------
 -------------------- CREATE GET CONNECTION STRING FUNCTION  --------------------
 --------------------------------------------------------------------------------
 
 
-USE NHDW_LDT_0214;
 
-DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+-- DROP FUNCTION IF EXISTS GET_CONNECTION_STRING;
+
 GO
 CREATE FUNCTION GET_CONNECTION_STRING() RETURNS NVARCHAR(MAX) AS
 BEGIN
@@ -28,11 +87,9 @@ GO
 
 
 
-USE NHDW_LDT_0214;
+-- DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
 
-DROP TYPE IF EXISTS TEMP_MEASUREMENT_TABLE_TYPE;
 GO
-
 CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
     MEASUREMENTRECORDID NVARCHAR(50) NOT NULL,
     MEASUREMENTID NVARCHAR(50) NOT NULL,
@@ -46,125 +103,15 @@ CREATE TYPE TEMP_MEASUREMENT_TABLE_TYPE AS TABLE (
 
 
 
---------------------------------------------------------------------------------
------------------------------- Transfer Procedure ------------------------------
---------------------------------------------------------------------------------
-
-
-
-DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWMEASUREMENT
-GO
-
-CREATE PROCEDURE ETL_PROCEDURE_DWMEASUREMENT
-AS
-BEGIN
-
-    -- -- get a string of id's already in EE and DW tables.
-    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
-    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + MEASUREMENTRECORDID
-    FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
-    IF (@ALREADY_IN_DIM IS NULL)
-        SET @ALREADY_IN_DIM = '0'
-
-    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
-    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
-    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-    IF (@IN_ERROR_EVENT IS NULL)
-        SET @IN_ERROR_EVENT = '0'
-
-    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
-    -- SET @TO_EXCLUDE = @IN_ERROR_EVENT;
-    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
-    PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
-
-
-    -- get connection string
-    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
-    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
-
-    -- write the code to get the required data - excludes those identified above.
-    DECLARE @SELECTQUERY_MS NVARCHAR(MAX);
-    SET @SELECTQUERY_MS = 
-                    '''SELECT MR.MEASUREMENTRECORDID, ' +
-                    'MR.MEASUREMENTID, DPR.DATAPOINTNUMBER, MR.CATEGORYID, DP.[NAME], ' + 
-                    'DPR.VALUE, DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
-                    'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
-                    'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
-                    'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
-                    'ON DP.MeasurementID = MR.MeasurementID ' +
-                    'WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
-
-    DECLARE @COMMAND_MS NVARCHAR(MAX);
-    SET @COMMAND_MS = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY_MS + ');'
-
-    PRINT('---- this is the command ----  ' + @COMMAND_MS);
-
-    DECLARE @TEMPMEASUREMENTTABLE AS TEMP_MEASUREMENT_TABLE_TYPE;
-
-    SELECT 'TT M A', *
-    FROM @TEMPMEASUREMENTTABLE;
-
-    INSERT INTO @TEMPMEASUREMENTTABLE
-    EXECUTE(@COMMAND_MS);
-
- -- inserting test data to spoof gender filters.
-    INSERT INTO @TEMPMEASUREMENTTABLE
-    VALUES
-        ('001', '3', '1', '3', 'Level of Pain', 0, 5, 1),
-        ('002', '3', '1', '3', 'Level of Pain', 7, 5, 1)
-    
-    SELECT 'TT M B', *
-    FROM @TEMPMEASUREMENTTABLE;
-
-    EXEC RUN_MEASUREMENT_FILTERS @DATA = @TEMPMEASUREMENTTABLE;
-
-    EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
-
-    EXEC TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
-
-END;
-
-
-
--------------------------------------------------------------------------------------------
-------------------------- EXECUTE ETL_PROCEDURE_DWMEASUREMENT -----------------------------
--------------------------------------------------------------------------------------------
-
-
-
-EXEC ETL_PROCEDURE_DWMEASUREMENT;
-
-
-
--------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------
--------------------------------------------------------------------------------------------
-
-
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_PATIENT
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
-
-SELECT *
-FROM NHDW_LDT_0214.DBO.ERROR_EVENT
-
-
-
 ----------------------------------------------------------------------------------------
 ----------------------------------- Apply Filters --------------------------------------
 ----------------------------------------------------------------------------------------
 
 
-DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_FILTERS
-GO
 
+-- DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_FILTERS
+
+GO
 CREATE PROCEDURE RUN_MEASUREMENT_FILTERS
     @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
 AS
@@ -218,7 +165,6 @@ END;
 
 
 
-
 ----------------------------------------------------------------------------------------------------
 ---------------------------------------------- Modify ----------------------------------------------
 ----------------------------------------------------------------------------------------------------
@@ -226,10 +172,9 @@ END;
 
 
 
+-- DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_MODIFY
 
-DROP PROCEDURE IF EXISTS RUN_MEASUREMENT_MODIFY
 GO
-
 CREATE PROCEDURE RUN_MEASUREMENT_MODIFY
     @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
 AS
@@ -269,7 +214,6 @@ BEGIN
     AND SOURCE_DATABASE = 'NHRM'
     AND SOURCE_TABLE = 'measurementrecord'
 
-
     -- If value is less than 1, then just insert 1 instead.
         INSERT INTO NHDW_LDT_0214.DBO.DW_MEASUREMENT
         (MEASUREMENTRECORDID,
@@ -307,25 +251,23 @@ BEGIN
 
     BEGIN CATCH
         BEGIN
-        DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
-        THROW 50000, @ERROR, 1
-    END
+            DECLARE @ERROR NVARCHAR(MAX) = ERROR_MESSAGE();
+            THROW 50000, @ERROR, 1
+        END
     END CATCH
 
 END
 
 
-EXEC ETL_PROCEDURE_DWMEASUREMENT;
+
 ----------------------------------------------------------------------------------------
 ----------------------- TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT -------------------------
 ----------------------------------------------------------------------------------------
 
 
 
-go
-USE NHDW_LDT_0214;
+-- DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
 
-DROP PROCEDURE IF EXISTS TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
 GO
 CREATE PROCEDURE TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT
     @DATA TEMP_MEASUREMENT_TABLE_TYPE READONLY
@@ -376,6 +318,118 @@ END;
 
 
 
+--------------------------------------------------------------------------------
+------------------------------ Select Procedure ------------------------------
+--------------------------------------------------------------------------------
+
+
+
+-- DROP PROCEDURE IF EXISTS ETL_PROCEDURE_DWMEASUREMENT
+
+GO
+CREATE PROCEDURE ETL_PROCEDURE_DWMEASUREMENT
+AS
+BEGIN
+
+    PRINT '--- ETL_PROCEDURE_DWMEASUREMENT has begun ---'
+
+    -- -- get a string of id's already in EE and DW tables.
+    DECLARE @ALREADY_IN_DIM NVARCHAR(MAX);
+    SELECT @ALREADY_IN_DIM = COALESCE(@ALREADY_IN_DIM + ',', '') + MEASUREMENTRECORDID
+    FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+    IF (@ALREADY_IN_DIM IS NULL)
+        SET @ALREADY_IN_DIM = '0'
+
+    DECLARE @IN_ERROR_EVENT NVARCHAR(MAX);
+    SELECT @IN_ERROR_EVENT = COALESCE(@IN_ERROR_EVENT + ',', '') + SOURCE_ID
+    FROM NHDW_LDT_0214.DBO.ERROR_EVENT
+    IF (@IN_ERROR_EVENT IS NULL)
+        SET @IN_ERROR_EVENT = '0'
+
+    DECLARE @TO_EXCLUDE NVARCHAR(MAX)
+    -- SET @TO_EXCLUDE = @IN_ERROR_EVENT;
+    SET @TO_EXCLUDE = @ALREADY_IN_DIM + ',' + @IN_ERROR_EVENT;
+    PRINT 'List of IDs to exclude: ' + CHAR(13)+CHAR(10) + @TO_EXCLUDE;
+
+
+    -- get connection string
+    DECLARE @CONNECTIONSTRING NVARCHAR(MAX);
+    EXECUTE @CONNECTIONSTRING = GET_CONNECTION_STRING;
+
+    -- write the code to get the required data - excludes those identified above.
+    DECLARE @SELECTQUERY_MS NVARCHAR(MAX);
+    SET @SELECTQUERY_MS = 
+                    '''SELECT MR.MEASUREMENTRECORDID, ' +
+                    'MR.MEASUREMENTID, DPR.DATAPOINTNUMBER, MR.CATEGORYID, DP.[NAME], ' + 
+                    'DPR.VALUE, DP.LOWERLIMIT, DP.UPPERLIMIT ' + 
+                    'FROM DDDM_TPS_1.dbo.measurementrecord MR ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapointrecord DPR ' + 
+                    'ON MR.MeasurementRecordID = DPR.MeasurementRecordID ' + 
+                    'INNER JOIN DDDM_TPS_1.dbo.datapoint DP ' + 
+                    'ON DP.MeasurementID = MR.MeasurementID ' +
+                    'WHERE URNUMBER NOT IN (' + @TO_EXCLUDE + ')''';
+
+    DECLARE @COMMAND_MS NVARCHAR(MAX);
+    SET @COMMAND_MS = 'SELECT * FROM OPENROWSET(''SQLNCLI'', ' + '''' + @CONNECTIONSTRING + ''',' + @SELECTQUERY_MS + ');'
+    PRINT('--- This is the command string: ' + @COMMAND_MS);
+
+    DECLARE @TEMPMEASUREMENTTABLE AS TEMP_MEASUREMENT_TABLE_TYPE;
+
+    -- SELECT 'TT M A', *
+    -- FROM @TEMPMEASUREMENTTABLE;
+
+    INSERT INTO @TEMPMEASUREMENTTABLE
+    EXECUTE(@COMMAND_MS);
+
+ -- inserting test data to spoof gender filters.
+    INSERT INTO @TEMPMEASUREMENTTABLE
+    VALUES
+        ('001', '3', '1', '3', 'Level of Pain', 0, 5, 1),
+        ('002', '3', '1', '3', 'Level of Pain', 7, 5, 1)
+    
+    -- SELECT 'TT M B', *
+    -- FROM @TEMPMEASUREMENTTABLE;
+
+    EXEC RUN_MEASUREMENT_FILTERS @DATA = @TEMPMEASUREMENTTABLE;
+
+    EXEC RUN_MEASUREMENT_MODIFY @DATA = @TEMPMEASUREMENTTABLE;
+
+    EXEC TRANSFER_GOOD_DATA_INTO_DW_MEASUREMENT @DATA = @TEMPMEASUREMENTTABLE;
+
+    PRINT '--- ETL_PROCEDURE_DWMEASUREMENT has finished ---'
+
+END;
+
+
+
+-------------------------------------------------------------------------------------------
+------------------------- EXECUTE ETL_PROCEDURE_DWMEASUREMENT -----------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+GO
+EXEC ETL_PROCEDURE_DWMEASUREMENT;
+
+
+
+-------------------------------------------------------------------------------------------
+---------------------------   table lookups for testing    --------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_PATIENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_MEASUREMENT
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.DW_DWDATAPOINTRECORD
+
+-- SELECT *
+-- FROM NHDW_LDT_0214.DBO.ERROR_EVENT
 
 
 
